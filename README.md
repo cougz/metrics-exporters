@@ -1,6 +1,6 @@
-# Prometheus Exporters
+# Metrics Exporters
 
-A collection of custom Prometheus exporters for various infrastructure components.
+A collection of custom metrics exporters for various infrastructure components, supporting multiple export formats including Prometheus and OpenTelemetry.
 
 ## Available Exporters
 
