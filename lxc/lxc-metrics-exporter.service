@@ -1,0 +1,21 @@
+[Unit]
+Description=LXC Metrics Exporter
+After=network.target
+
+[Service]
+Type=simple
+User=otelcol
+Group=otelcol
+WorkingDirectory=/opt/lxc-metrics-exporter
+ExecStart=/opt/lxc-metrics-exporter/venv/bin/python /opt/lxc-metrics-exporter/main.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONPATH=/opt/lxc-metrics-exporter
+Environment=OTEL_ENABLED=true
+Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
+Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
+Environment=OTEL_SERVICE_VERSION=1.0.0
+Environment=OTEL_INSECURE=true
+
+[Install]
+WantedBy=multi-user.target
