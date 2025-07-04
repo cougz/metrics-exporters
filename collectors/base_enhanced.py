@@ -83,7 +83,7 @@ class EnvironmentAwareCollector(ABC):
                 self._strategy = ContainerStrategy()
                 logger.debug(f"Using container strategy for {self.name} collector")
             
-            elif runtime_env.is_proxmox_host or runtime_env.is_generic_host:
+            elif runtime_env.is_host:
                 self._strategy = HostStrategy()
                 logger.debug(f"Using host strategy for {self.name} collector")
             
@@ -107,8 +107,8 @@ class EnvironmentAwareCollector(ABC):
                 return strategy.collect_memory()
             elif metric_type == "cpu":
                 return strategy.collect_cpu()
-            elif metric_type == "disk":
-                return strategy.collect_disk()
+            elif metric_type == "disk" or metric_type == "filesystem":
+                return strategy.collect_filesystem()
             elif metric_type == "network":
                 return strategy.collect_network()
             elif metric_type == "process":

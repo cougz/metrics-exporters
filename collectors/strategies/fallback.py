@@ -105,8 +105,8 @@ class FallbackStrategy(CollectionStrategy):
         except Exception as e:
             return self._create_failure_result([f"Fallback CPU collection failed: {e}"])
     
-    def collect_disk(self) -> StrategyResult:
-        """Collect basic disk metrics from proc filesystem"""
+    def collect_filesystem(self) -> StrategyResult:
+        """Collect basic filesystem metrics from proc filesystem"""
         try:
             data = {}
             errors = []
@@ -138,10 +138,10 @@ class FallbackStrategy(CollectionStrategy):
             if data:
                 return self._create_success_result(data, CollectionMethod.PROC_FILESYSTEM)
             else:
-                return self._create_failure_result(errors or ["No disk data available"])
+                return self._create_failure_result(errors or ["No filesystem data available"])
         
         except Exception as e:
-            return self._create_failure_result([f"Fallback disk collection failed: {e}"])
+            return self._create_failure_result([f"Fallback filesystem collection failed: {e}"])
     
     def collect_network(self) -> StrategyResult:
         """Collect basic network metrics from proc filesystem"""
