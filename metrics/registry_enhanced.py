@@ -110,6 +110,7 @@ class EnvironmentAwareMetricsRegistry:
             'network': ('collectors.network_enhanced', 'NetworkCollector'),
             'process': ('collectors.process_enhanced', 'ProcessCollector'),
             'sensors': ('collectors.sensors_enhanced', 'SensorsCollector'),
+            'smart': ('collectors.smart_enhanced', 'SmartCollector'),
             'zfs': ('collectors.zfs_enhanced', 'ZFSCollector'),
         }
         
@@ -286,8 +287,8 @@ class EnvironmentAwareMetricsRegistry:
             'network': 'Network metrics with environment-aware collection',
             'process': 'Process metrics with environment-aware collection',
             'zfs': 'ZFS pool metrics (host environments only)',
-            'sensors_cpu': 'CPU temperature and thermal sensors (host environments only)',
-            'sensors_nvme': 'NVMe/disk temperature sensors (host environments only)'
+            'sensors': 'Hardware temperature sensors using sensors command (host environments only)',
+            'smart': 'SMART disk health monitoring (host environments only, optional)'
         }
         
         status = {
