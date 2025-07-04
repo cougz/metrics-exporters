@@ -75,9 +75,9 @@ class RuntimeEnvironment:
     def get_default_collectors(self) -> list[str]:
         """Get default collectors for the environment"""
         if self.is_container:
-            return ["memory", "cpu", "disk", "network", "process"]
+            return ["memory", "cpu", "filesystem", "network", "process"]
         elif self.is_host:
-            return ["memory", "cpu", "disk", "network", "process", "sensors"]
+            return ["memory", "cpu", "filesystem", "network", "process", "sensors_cpu", "sensors_nvme", "zfs"]
         else:
             return ["memory", "process"]  # Minimal set for unknown environments
     

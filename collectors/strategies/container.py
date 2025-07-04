@@ -57,10 +57,14 @@ class ContainerStrategy(CollectionStrategy):
         # Fallback to proc filesystem
         return self._collect_cpu_proc()
     
-    def collect_disk(self) -> StrategyResult:
-        """Collect disk metrics using proc filesystem"""
+    def collect_filesystem(self) -> StrategyResult:
+        """Collect filesystem metrics using proc filesystem"""
         # In containers, we primarily use proc filesystem for disk metrics
-        return self._collect_disk_proc()
+        return self._collect_filesystem_proc()
+    
+    def collect_zfs(self) -> StrategyResult:
+        """ZFS collection not available in container environments"""
+        return self._create_not_supported_result("ZFS pools not accessible in containers")
     
     def collect_network(self) -> StrategyResult:
         """Collect network metrics using proc filesystem"""
@@ -72,9 +76,13 @@ class ContainerStrategy(CollectionStrategy):
         # Use proc filesystem for process count
         return self._collect_process_proc()
     
-    def collect_sensors(self) -> StrategyResult:
-        """Sensors collection not available in container environments"""
-        return self._create_not_supported_result("Hardware sensors not accessible in containers")
+    def collect_sensors_cpu(self) -> StrategyResult:
+        """CPU sensors collection not available in container environments"""
+        return self._create_not_supported_result("CPU sensors not accessible in containers")
+    
+    def collect_sensors_nvme(self) -> StrategyResult:
+        """NVMe sensors collection not available in container environments"""
+        return self._create_not_supported_result("NVMe sensors not accessible in containers")
     
     def _detect_cgroup_version(self) -> int:
         """Detect cgroup version (1 or 2)"""
@@ -317,7 +325,7 @@ class ContainerStrategy(CollectionStrategy):
         except Exception as e:
             return self._create_failure_result([f"proc filesystem CPU collection failed: {e}"])
     
-    def _collect_disk_proc(self) -> StrategyResult:
+    def _collect_filesystem_proc(self) -> StrategyResult:
         """Collect disk metrics from proc filesystem"""
         try:
             data = {}

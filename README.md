@@ -43,13 +43,15 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 ### Process Metrics
 - `node_processes_total` - Number of processes
 
-### Hardware Sensor Metrics (Host environments only)
+### CPU Sensor Metrics (Host environments only)
 - `node_hwmon_temp_celsius{sensor,chip,feature}` - Hardware monitor temperature in Celsius
 - `node_hwmon_temp_crit_celsius{sensor,chip,feature}` - Hardware monitor critical temperature threshold
 - `node_hwmon_temp_max_celsius{sensor,chip,feature}` - Hardware monitor maximum temperature threshold
 - `node_hwmon_fan_rpm{sensor,chip,type}` - Hardware monitor fan speed in RPM
 - `node_hwmon_voltage_volts{sensor,chip,type}` - Hardware monitor voltage in volts
 - `node_hwmon_power_watts{sensor,chip,type}` - Hardware monitor power consumption in watts
+
+### NVMe/Disk Sensor Metrics (Host environments only)
 - `node_disk_temperature_celsius{device,model,interface}` - Disk temperature in Celsius
 - `node_disk_temp_warning_celsius{device,model,interface}` - Disk temperature warning threshold
 - `node_disk_temp_critical_celsius{device,model,interface}` - Disk temperature critical threshold
@@ -167,7 +169,7 @@ Environment=COLLECTION_INTERVAL=30
 Environment=METRICS_PORT=9100
 
 # Collectors
-Environment=ENABLED_COLLECTORS=memory,disk,process
+Environment=ENABLED_COLLECTORS=memory,filesystem,process
 
 # Logging
 Environment=LOG_LEVEL=INFO
@@ -268,7 +270,10 @@ Configuration
 │   ├── __init__.py
 │   ├── base.py               # Base collector class
 │   ├── memory.py             # Memory metrics collector
-│   ├── disk.py               # Disk metrics collector
+│   ├── filesystem_enhanced.py # Filesystem metrics collector
+│   ├── sensors_cpu_enhanced.py # CPU temperature sensors
+│   ├── sensors_nvme_enhanced.py # NVMe/disk temperature sensors
+│   ├── zfs_enhanced.py       # ZFS pool metrics collector
 │   └── process.py            # Process metrics collector
 ├── environment/
 │   ├── __init__.py

@@ -84,10 +84,12 @@ class EnvironmentAwareMetricsRegistry:
         collector_mapping = {
             'memory': ('collectors.memory_enhanced', 'MemoryCollector'),
             'cpu': ('collectors.cpu_enhanced', 'CPUCollector'),
-            'disk': ('collectors.disk_enhanced', 'DiskCollector'),
+            'filesystem': ('collectors.filesystem_enhanced', 'FilesystemCollector'),
             'network': ('collectors.network_enhanced', 'NetworkCollector'),
             'process': ('collectors.process_enhanced', 'ProcessCollector'),
-            'sensors': ('collectors.sensors_enhanced', 'SensorsCollector'),
+            'sensors_cpu': ('collectors.sensors_cpu_enhanced', 'SensorsCPUCollector'),
+            'sensors_nvme': ('collectors.sensors_nvme_enhanced', 'SensorsNVMeCollector'),
+            'zfs': ('collectors.zfs_enhanced', 'ZFSCollector'),
         }
         
         for collector_name in enabled_collectors:
@@ -126,7 +128,7 @@ class EnvironmentAwareMetricsRegistry:
             original_mapping = {
                 'memory': ('collectors.memory', 'MemoryCollector'),
                 'cpu': ('collectors.cpu', 'CPUCollector'),
-                'disk': ('collectors.disk', 'DiskCollector'),
+                'filesystem': ('collectors.disk', 'DiskCollector'),  # Fallback to old disk collector
                 'network': ('collectors.network', 'NetworkCollector'),
                 'process': ('collectors.process', 'ProcessCollector'),
             }

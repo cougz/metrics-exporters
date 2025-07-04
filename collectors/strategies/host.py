@@ -34,9 +34,13 @@ class HostStrategy(CollectionStrategy):
         """Collect CPU metrics with hardware access"""
         return self._collect_cpu_full()
     
-    def collect_disk(self) -> StrategyResult:
-        """Collect disk metrics with full filesystem access"""
-        return self._collect_disk_full()
+    def collect_filesystem(self) -> StrategyResult:
+        """Collect filesystem metrics with full filesystem access"""
+        return self._collect_filesystem_full()
+    
+    def collect_zfs(self) -> StrategyResult:
+        """Collect ZFS pool metrics with full access"""
+        return self._collect_zfs_full()
     
     def collect_network(self) -> StrategyResult:
         """Collect network metrics with full host access"""
@@ -46,9 +50,13 @@ class HostStrategy(CollectionStrategy):
         """Collect process metrics with full system access"""
         return self._collect_process_full()
     
-    def collect_sensors(self) -> StrategyResult:
-        """Collect hardware sensor metrics with full access"""
-        return self._collect_sensors_full()
+    def collect_sensors_cpu(self) -> StrategyResult:
+        """Collect CPU sensor metrics with full access"""
+        return self._collect_sensors_cpu_full()
+    
+    def collect_sensors_nvme(self) -> StrategyResult:
+        """Collect NVMe/disk sensor metrics with full access"""
+        return self._collect_sensors_nvme_full()
     
     def collect_proxmox_system(self) -> StrategyResult:
         """Collect Proxmox-specific system metrics"""
@@ -191,8 +199,8 @@ class HostStrategy(CollectionStrategy):
         except Exception as e:
             return self._create_failure_result([f"Full CPU collection failed: {e}"])
     
-    def _collect_disk_full(self) -> StrategyResult:
-        """Collect comprehensive disk metrics"""
+    def _collect_filesystem_full(self) -> StrategyResult:
+        """Collect comprehensive filesystem metrics"""
         try:
             data = {}
             errors = []
@@ -247,18 +255,32 @@ class HostStrategy(CollectionStrategy):
                 
                 data["disk_stats"] = disk_stats
             
+            if data:
+                return self._create_success_result(data, CollectionMethod.FILESYSTEM_FULL)
+            else:
+                return self._create_failure_result(errors or ["No filesystem data available"])
+        
+        except Exception as e:
+            return self._create_failure_result([f"Filesystem collection failed: {e}"])
+    
+    def _collect_zfs_full(self) -> StrategyResult:
+        """Collect comprehensive ZFS pool metrics"""
+        try:
+            data = {}
+            errors = []
+            
             # Collect ZFS pool information if ZFS is available
             zfs_pools = self._collect_zfs_pools()
             if zfs_pools:
                 data["zfs_pools"] = zfs_pools
             
             if data:
-                return self._create_success_result(data, CollectionMethod.FILESYSTEM_FULL)
+                return self._create_success_result(data, CollectionMethod.HARDWARE_ACCESS)
             else:
-                return self._create_failure_result(errors or ["No disk data available"])
+                return self._create_failure_result(errors or ["No ZFS pools available"])
         
         except Exception as e:
-            return self._create_failure_result([f"Full disk collection failed: {e}"])
+            return self._create_failure_result([f"ZFS collection failed: {e}"])
     
     def _collect_network_full(self) -> StrategyResult:
         """Collect comprehensive network metrics"""
@@ -662,8 +684,8 @@ class HostStrategy(CollectionStrategy):
             pass
         return None
     
-    def _collect_sensors_full(self) -> StrategyResult:
-        """Collect comprehensive hardware sensor metrics"""
+    def _collect_sensors_cpu_full(self) -> StrategyResult:
+        """Collect comprehensive CPU sensor metrics"""
         try:
             data = {}
             errors = []
@@ -673,11 +695,6 @@ class HostStrategy(CollectionStrategy):
             if cpu_temps:
                 data["cpu_temperatures"] = cpu_temps
             
-            # Collect disk temperatures using smartctl
-            disk_temps = self._collect_disk_temperatures()
-            if disk_temps:
-                data["disk_temperatures"] = disk_temps
-            
             # Collect additional thermal sensors (fans, voltage, etc.)
             thermal_sensors = self._collect_thermal_sensors()
             if thermal_sensors:
@@ -686,10 +703,29 @@ class HostStrategy(CollectionStrategy):
             if data:
                 return self._create_success_result(data, CollectionMethod.HARDWARE_ACCESS)
             else:
-                return self._create_failure_result(errors or ["No sensor data available"])
+                return self._create_failure_result(errors or ["No CPU sensor data available"])
         
         except Exception as e:
-            return self._create_failure_result([f"Sensors collection failed: {e}"])
+            return self._create_failure_result([f"CPU sensors collection failed: {e}"])
+    
+    def _collect_sensors_nvme_full(self) -> StrategyResult:
+        """Collect comprehensive NVMe/disk sensor metrics"""
+        try:
+            data = {}
+            errors = []
+            
+            # Collect disk temperatures using smartctl
+            disk_temps = self._collect_disk_temperatures()
+            if disk_temps:
+                data["disk_temperatures"] = disk_temps
+            
+            if data:
+                return self._create_success_result(data, CollectionMethod.HARDWARE_ACCESS)
+            else:
+                return self._create_failure_result(errors or ["No NVMe sensor data available"])
+        
+        except Exception as e:
+            return self._create_failure_result([f"NVMe sensors collection failed: {e}"])
     
     def _collect_cpu_temperatures(self) -> Optional[List[Dict[str, Any]]]:
         """Collect CPU temperature sensors using sensors command"""

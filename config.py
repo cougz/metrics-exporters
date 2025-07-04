@@ -33,7 +33,7 @@ class Config(BaseSettings):
     auto_detect_environment: bool = Field(default=True, description="Automatically detect runtime environment")
     
     # Collector settings
-    enabled_collectors: List[str] = Field(default=["memory", "disk", "process", "cpu", "network"], description="List of enabled collectors")
+    enabled_collectors: List[str] = Field(default=["memory", "filesystem", "process", "cpu", "network"], description="List of enabled collectors")
     
     # CPU collector settings
     cpu_collection_method: Literal["cgroup", "proc", "auto"] = Field(default="auto", description="CPU statistics collection method")
@@ -130,7 +130,7 @@ class Config(BaseSettings):
     @validator('enabled_collectors')
     def validate_enabled_collectors(cls, v):
         """Validate that enabled collectors are known collectors"""
-        valid_collectors = {'memory', 'disk', 'process', 'cpu', 'network'}
+        valid_collectors = {'memory', 'filesystem', 'process', 'cpu', 'network', 'sensors_cpu', 'sensors_nvme', 'zfs'}
         for collector in v:
             if collector not in valid_collectors:
                 raise ValueError(f"Unknown collector: {collector}. Valid collectors: {valid_collectors}")

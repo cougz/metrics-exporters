@@ -53,8 +53,8 @@ class CollectionStrategy(abc.ABC):
         pass
     
     @abc.abstractmethod
-    def collect_disk(self) -> StrategyResult:
-        """Collect disk metrics"""
+    def collect_filesystem(self) -> StrategyResult:
+        """Collect filesystem metrics"""
         pass
     
     @abc.abstractmethod
