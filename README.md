@@ -28,6 +28,18 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 - `node_filesystem_avail_bytes{device,mountpoint,fstype}` - Filesystem space available
 - `node_filesystem_size_bytes{device,mountpoint,fstype}` - Filesystem total size
 
+### ZFS Pool Metrics (Host environments only)
+- `node_zfs_pool_size_bytes{pool,health}` - ZFS pool total size in bytes
+- `node_zfs_pool_allocated_bytes{pool,health}` - ZFS pool allocated space in bytes
+- `node_zfs_pool_free_bytes{pool,health}` - ZFS pool free space in bytes
+- `node_zfs_pool_capacity_percent{pool,health}` - ZFS pool capacity as percentage
+- `node_zfs_pool_fragmentation_percent{pool,health}` - ZFS pool fragmentation percentage
+- `node_zfs_pool_readonly{pool,health}` - ZFS pool readonly status (1 = readonly, 0 = read-write)
+- `node_zfs_pool_read_ops_per_sec{pool,health}` - ZFS pool read operations per second
+- `node_zfs_pool_write_ops_per_sec{pool,health}` - ZFS pool write operations per second
+- `node_zfs_pool_read_bytes_per_sec{pool,health}` - ZFS pool read bandwidth in bytes per second
+- `node_zfs_pool_write_bytes_per_sec{pool,health}` - ZFS pool write bandwidth in bytes per second
+
 ### Process Metrics
 - `node_processes_total` - Number of processes
 

@@ -243,6 +243,11 @@ class HostStrategy(CollectionStrategy):
                 
                 data["disk_stats"] = disk_stats
             
+            # Collect ZFS pool information if ZFS is available
+            zfs_pools = self._collect_zfs_pools()
+            if zfs_pools:
+                data["zfs_pools"] = zfs_pools
+            
             if data:
                 return self._create_success_result(data, CollectionMethod.FILESYSTEM_FULL)
             else:
@@ -520,3 +525,135 @@ class HostStrategy(CollectionStrategy):
         
         except Exception as e:
             return self._create_failure_result([f"Container inventory collection failed: {e}"])
+    
+    def _collect_zfs_pools(self) -> Optional[List[Dict[str, Any]]]:
+        """Collect ZFS pool information"""
+        try:
+            # Check if ZFS is available
+            result = subprocess.run(
+                ["which", "zpool"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("ZFS tools not available")
+                return None
+            
+            pools = []
+            
+            # Get basic pool list and status
+            try:
+                result = subprocess.run(
+                    ["zpool", "list", "-H", "-p"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split('\n'):
+                        if line.strip():
+                            try:
+                                parts = line.split('\t')
+                                if len(parts) >= 10:
+                                    pool_name = parts[0]
+                                    size_bytes = int(parts[1])
+                                    alloc_bytes = int(parts[2])
+                                    free_bytes = int(parts[3])
+                                    capacity_percent = float(parts[7])
+                                    health = parts[9]
+                                    
+                                    pool_info = {
+                                        "name": pool_name,
+                                        "size_bytes": size_bytes,
+                                        "allocated_bytes": alloc_bytes,
+                                        "free_bytes": free_bytes,
+                                        "capacity_percent": capacity_percent,
+                                        "health": health
+                                    }
+                                    
+                                    # Get additional pool properties
+                                    pool_props = self._get_zfs_pool_properties(pool_name)
+                                    if pool_props:
+                                        pool_info.update(pool_props)
+                                    
+                                    # Get pool I/O statistics
+                                    pool_iostat = self._get_zfs_pool_iostat(pool_name)
+                                    if pool_iostat:
+                                        pool_info.update(pool_iostat)
+                                    
+                                    pools.append(pool_info)
+                            except (ValueError, IndexError) as e:
+                                logger.warning(f"Could not parse zpool list line: {line} - {e}")
+                                continue
+            except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+                logger.warning(f"Could not get ZFS pool list: {e}")
+                return None
+            
+            return pools if pools else None
+            
+        except Exception as e:
+            logger.warning(f"ZFS pool collection failed: {e}")
+            return None
+    
+    def _get_zfs_pool_properties(self, pool_name: str) -> Optional[Dict[str, Any]]:
+        """Get additional ZFS pool properties"""
+        try:
+            result = subprocess.run(
+                ["zpool", "get", "-H", "-p", "fragmentation,readonly,feature@async_destroy", pool_name],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                props = {}
+                for line in result.stdout.strip().split('\n'):
+                    if line.strip():
+                        try:
+                            parts = line.split('\t')
+                            if len(parts) >= 3:
+                                prop_name = parts[1]
+                                prop_value = parts[2]
+                                
+                                if prop_name == "fragmentation" and prop_value != "-":
+                                    props["fragmentation_percent"] = float(prop_value.rstrip('%'))
+                                elif prop_name == "readonly":
+                                    props["readonly"] = prop_value == "on"
+                                elif prop_name.startswith("feature@"):
+                                    feature_name = prop_name.replace("feature@", "")
+                                    props[f"feature_{feature_name}"] = prop_value
+                        except (ValueError, IndexError):
+                            continue
+                return props
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+            pass
+        return None
+    
+    def _get_zfs_pool_iostat(self, pool_name: str) -> Optional[Dict[str, Any]]:
+        """Get ZFS pool I/O statistics"""
+        try:
+            result = subprocess.run(
+                ["zpool", "iostat", "-H", "-p", pool_name, "1", "2"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                # Take the last line (second sample) for current stats
+                if len(lines) >= 2:
+                    last_line = lines[-1]
+                    try:
+                        parts = last_line.split()
+                        if len(parts) >= 7:
+                            return {
+                                "read_operations_per_sec": float(parts[1]),
+                                "write_operations_per_sec": float(parts[2]),
+                                "read_bandwidth_bytes_per_sec": int(parts[3]),
+                                "write_bandwidth_bytes_per_sec": int(parts[4])
+                            }
+                    except (ValueError, IndexError):
+                        pass
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+            pass
+        return None
