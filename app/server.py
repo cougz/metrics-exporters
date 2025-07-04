@@ -7,7 +7,7 @@ from fastapi import FastAPI, Response, HTTPException
 from fastapi.responses import HTMLResponse
 from config import Config
 from metrics.registry_enhanced import EnvironmentAwareMetricsRegistry
-from metrics.exporters.base import ExporterFactory
+from metrics.exporter import OTLPExporter
 from logging_config import get_logger, log_metrics_collection, log_error
 from middleware.security import (
     SecurityHeadersMiddleware,
@@ -34,8 +34,8 @@ class MetricsServer:
         )
         self.registry = EnvironmentAwareMetricsRegistry(config)
         
-        # Initialize single exporter based on format
-        self.exporter = ExporterFactory.create_exporter(config)
+        # Initialize OTLP exporter
+        self.exporter = OTLPExporter(config)
         
         # Collection state
         self.last_collection_time = 0
@@ -64,17 +64,17 @@ class MetricsServer:
         if self.config.enable_request_logging:
             self.app.add_middleware(RequestLoggingMiddleware)
         
-        # Rate limiting middleware
+        # Rate limiting middleware (simplified)
         self.app.add_middleware(
             RateLimitMiddleware,
-            max_requests=self.config.rate_limit_requests,
-            window_seconds=self.config.rate_limit_window
+            max_requests=100,  # Default value
+            window_seconds=60   # Default value
         )
         
-        # Security headers middleware
+        # Security headers middleware (simplified)
         self.app.add_middleware(
             SecurityHeadersMiddleware,
-            trusted_hosts=self.config.trusted_hosts
+            trusted_hosts=["*"]  # Default to allow all
         )
     
     def _setup_routes(self):
@@ -82,15 +82,8 @@ class MetricsServer:
         
         @self.app.get('/metrics', response_class=Response)
         def get_metrics():
-            """Serve metrics in Prometheus format (only available for Prometheus export)"""
-            if self.config.is_prometheus_format():
-                try:
-                    content = self.config.prometheus_file.read_text(encoding='utf-8')
-                    return Response(content, media_type='text/plain')
-                except FileNotFoundError:
-                    return Response("# Metrics file not found\n", media_type='text/plain')
-            else:
-                return Response("# Metrics endpoint only available for Prometheus export format\n", media_type='text/plain')
+            """Metrics endpoint - OTLP only (no Prometheus support)"""
+            return Response("# Metrics endpoint not available - OTLP export only\n", media_type='text/plain')
         
         @self.app.get('/health')
         def health_check():
@@ -104,7 +97,7 @@ class MetricsServer:
                 "collection_interval": self.config.collection_interval,
                 "total_collections": self.collection_count,
                 "collection_errors": self.collection_errors,
-                "export_format": self.config.export_format.value,
+                "export_format": "otlp",
                 "exporter_healthy": self.exporter.is_healthy()
             }
             
@@ -134,10 +127,9 @@ class MetricsServer:
                 },
                 "collectors": self.registry.get_collector_status(),
                 "exporter": {
-                    "format": self.config.export_format.value,
+                    "format": "otlp",
                     "healthy": self.exporter.is_healthy(),
-                    "prometheus_file": str(self.config.prometheus_file) if self.config.is_prometheus_format() else None,
-                    "otlp_endpoint": self.config.otel_endpoint if self.config.is_otlp_format() else None
+                    "otlp_endpoint": self.config.otlp_endpoint
                 }
             }
         
@@ -248,16 +240,11 @@ class MetricsServer:
                 raw_metrics = self.registry.collect_all()
                 
                 # Apply transformation if OpenTelemetry conventions are enabled
-                transformed_metrics = raw_metrics
-                transformation_applied = False
-                
-                if self.config.use_otel_semconv:
-                    from metrics.transformer import MetricTransformer
-                    transformer = MetricTransformer(self.config)
-                    transformed_metrics = transformer.transform_metrics(raw_metrics)
-                    enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
-                    transformed_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
-                    transformation_applied = True
+                # Transform metrics using the exporter's transformer (always-on)
+                from metrics.transformer import MetricTransformer
+                transformer = MetricTransformer(self.config)
+                transformed_metrics = transformer.transform_all(raw_metrics)
+                transformation_applied = True
                 
                 def group_metrics(metrics_list):
                     """Group metrics by name for analysis"""
@@ -303,11 +290,11 @@ class MetricsServer:
                 
                 # Get export format info
                 export_info = {
-                    "format": self.config.export_format.value,
-                    "use_otel_semconv": self.config.use_otel_semconv,
+                    "format": "otlp",
+                    "use_otel_semconv": True,
                     "transformation_applied": transformation_applied,
-                    "otlp_endpoint": self.config.otel_endpoint if self.config.is_otlp_format() else None,
-                    "prometheus_file": str(self.config.prometheus_file) if self.config.is_prometheus_format() else None
+                    "otlp_endpoint": self.config.otlp_endpoint,
+                    "prometheus_file": None
                 }
                 
                 result = {
@@ -355,8 +342,7 @@ class MetricsServer:
         @self.app.get('/debug/metrics/otel')
         def debug_otel_metrics():
             """Debug endpoint showing OpenTelemetry transformed metrics in Prometheus format"""
-            if not self.config.use_otel_semconv:
-                return Response("# OpenTelemetry semantic conventions not enabled\n# Set use_otel_semconv=true to enable\n", media_type='text/plain')
+            # OpenTelemetry semantic conventions are always enabled
             
             try:
                 # Collect and transform metrics
@@ -487,9 +473,9 @@ class MetricsServer:
                 
                 return {
                     "exporter_type": type(self.exporter).__name__,
-                    "endpoint": self.config.otel_endpoint,
+                    "endpoint": self.config.otlp_endpoint,
                     "service_name": self.config.service_name,
-                    "insecure": self.config.otel_insecure,
+                    "insecure": self.config.otlp_insecure,
                     "exporter_healthy": self.exporter.is_healthy(),
                     "connection_status": connection_status,
                     "last_export_logs": "Check /debug/logs for recent OTLP export logs"
@@ -505,14 +491,10 @@ class MetricsServer:
                 # Collect raw metrics
                 raw_metrics = self.registry.collect_all()
                 
-                # Apply transformations if enabled
-                final_metrics = raw_metrics
-                if self.config.use_otel_semconv:
-                    from metrics.transformer import MetricTransformer
-                    transformer = MetricTransformer(self.config)
-                    transformed_metrics = transformer.transform_metrics(raw_metrics)
-                    enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
-                    final_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+                # Apply transformations (always-on)
+                from metrics.transformer import MetricTransformer
+                transformer = MetricTransformer(self.config)
+                final_metrics = transformer.transform_all(raw_metrics)
                 
                 # Simulate what the OTLP exporter would send
                 grouped_metrics = {}
@@ -529,17 +511,13 @@ class MetricsServer:
                     })
                 
                 # Get resource attributes that would be sent
-                resource_attrs = self.config.get_otel_resource_attributes()
-                if self.config.use_otel_semconv:
-                    from metrics.transformer import MetricTransformer
-                    transformer = MetricTransformer(self.config)
-                    resource_attrs.update(transformer.get_resource_attributes())
+                resource_attrs = self.config.get_otlp_resource_attributes()
                 
                 return {
-                    "otlp_endpoint": self.config.otel_endpoint,
+                    "otlp_endpoint": self.config.otlp_endpoint,
                     "service_name": self.config.service_name,
                     "service_version": self.config.service_version,
-                    "transformation_enabled": self.config.use_otel_semconv,
+                    "transformation_enabled": True,
                     "raw_metric_count": len(raw_metrics),
                     "final_metric_count": len(final_metrics),
                     "grouped_metric_count": len(grouped_metrics),
@@ -568,11 +546,11 @@ class MetricsServer:
             """Show current configuration affecting metric naming and export"""
             try:
                 return {
-                    "export_format": self.config.export_format.value,
-                    "use_otel_semconv": self.config.use_otel_semconv,
-                    "otel_endpoint": self.config.otel_endpoint,
-                    "otel_service_name": self.config.otel_service_name,
-                    "otel_service_version": self.config.otel_service_version,
+                    "export_format": "otlp",
+                    "use_otel_semconv": True,
+                    "otlp_endpoint": self.config.otlp_endpoint,
+                    "service_name": self.config.service_name,
+                    "service_version": self.config.service_version,
                     "enabled_collectors": self.config.enabled_collectors,
                     "collection_interval": self.config.collection_interval,
                     "environment": {
@@ -580,8 +558,8 @@ class MetricsServer:
                         "is_host": self.registry.get_runtime_environment().is_host,
                         "is_container": self.registry.get_runtime_environment().is_container
                     },
-                    "naming_strategy": "OpenTelemetry semantic conventions" if self.config.use_otel_semconv else "Prometheus node_exporter style",
-                    "expected_metric_prefix": "system." if self.config.use_otel_semconv else "node_",
+                    "naming_strategy": "OpenTelemetry semantic conventions",
+                    "expected_metric_prefix": "system.",
                     "timestamp": time.time()
                 }
             except Exception as e:
@@ -742,7 +720,7 @@ class MetricsServer:
                 <div class="section">
                     <ul>
                         <li><strong>Collection Interval:</strong> {self.config.collection_interval} seconds</li>
-                        <li><strong>Export Format:</strong> <span class="status-enabled">{self.config.export_format.value.upper()}</span></li>
+                        <li><strong>Export Format:</strong> <span class="status-enabled">OTLP</span></li>
                         <li><strong>Exporter Status:</strong> <span class="{'status-enabled' if self.exporter.is_healthy() else 'status-disabled'}">{'Healthy' if self.exporter.is_healthy() else 'Unhealthy'}</span></li>
                         <li><strong>Hostname:</strong> {os.uname().nodename}</li>
                     </ul>
@@ -765,21 +743,13 @@ class MetricsServer:
         try:
             # Collect and transform metrics
             raw_metrics = self.registry.collect_all()
-            final_metrics = raw_metrics
-            
-            if self.config.use_otel_semconv:
-                from metrics.transformer import MetricTransformer
-                transformer = MetricTransformer(self.config)
-                transformed_metrics = transformer.transform_metrics(raw_metrics)
-                enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
-                final_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+            # Apply transformations (always-on)
+            from metrics.transformer import MetricTransformer
+            transformer = MetricTransformer(self.config)
+            final_metrics = transformer.transform_all(raw_metrics)
             
             # Get resource attributes
-            resource_attrs = self.config.get_otel_resource_attributes()
-            if self.config.use_otel_semconv:
-                from metrics.transformer import MetricTransformer
-                transformer = MetricTransformer(self.config)
-                resource_attrs.update(transformer.get_resource_attributes())
+            resource_attrs = self.config.get_otlp_resource_attributes()
             
             # Simulate OTLP structure
             current_time = int(time.time() * 1_000_000_000)  # nanoseconds
@@ -835,7 +805,7 @@ class MetricsServer:
             return {
                 "otlp_structure": otlp_data,
                 "summary": {
-                    "endpoint": self.config.otel_endpoint,
+                    "endpoint": self.config.otlp_endpoint,
                     "metric_families": len(metric_families),
                     "total_data_points": sum(len(f["data_points"]) for f in metric_families.values()),
                     "resource_attributes": len(resource_attrs),

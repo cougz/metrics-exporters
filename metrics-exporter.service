@@ -20,7 +20,7 @@ Environment=OTLP_INSECURE=true
 
 # Optional settings
 Environment=COLLECTION_INTERVAL=30
-Environment=ENABLED_COLLECTORS=memory,cpu,filesystem,network,process
+Environment=ENABLED_COLLECTORS_STR=memory,cpu,filesystem,network,process
 Environment=LOG_LEVEL=INFO
 
 [Install]

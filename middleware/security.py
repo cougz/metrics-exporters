@@ -22,7 +22,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Validate trusted hosts if configured
         if self.trusted_hosts and request.client:
             host = request.headers.get("host", "")
-            if host and not any(trusted in host for trusted in self.trusted_hosts):
+            # Allow all hosts if "*" is in trusted hosts
+            if "*" not in self.trusted_hosts and host and not any(trusted in host for trusted in self.trusted_hosts):
                 logger.warning(
                     "Untrusted host access attempt",
                     host=host,

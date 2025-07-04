@@ -4,7 +4,7 @@ import importlib
 import pkgutil
 from typing import Dict, List, Type, Optional
 from .models import MetricValue
-from collectors.base_enhanced import EnvironmentAwareCollector
+from collectors.base import BaseCollector
 from environment.context import runtime_context, EnvironmentType
 from environment.detection import EnvironmentDetector
 from logging_config import get_logger
@@ -17,7 +17,7 @@ class EnvironmentAwareMetricsRegistry:
     
     def __init__(self, config=None):
         self.config = config
-        self.collectors: Dict[str, EnvironmentAwareCollector] = {}
+        self.collectors: Dict[str, BaseCollector] = {}
         self._runtime_env = None
         self._initialize_environment()
         self._register_collectors()
@@ -104,14 +104,14 @@ class EnvironmentAwareMetricsRegistry:
     def _register_core_collectors(self, enabled_collectors: List[str]):
         """Register core collectors using enhanced versions"""
         collector_mapping = {
-            'memory': ('collectors.memory_enhanced', 'MemoryCollector'),
-            'cpu': ('collectors.cpu_enhanced', 'CPUCollector'),
-            'filesystem': ('collectors.filesystem_enhanced', 'FilesystemCollector'),
-            'network': ('collectors.network_enhanced', 'NetworkCollector'),
-            'process': ('collectors.process_enhanced', 'ProcessCollector'),
-            'sensors': ('collectors.sensors_enhanced', 'SensorsCollector'),
-            'smart': ('collectors.smart_enhanced', 'SmartCollector'),
-            'zfs': ('collectors.zfs_enhanced', 'ZFSCollector'),
+            'memory': ('collectors.memory', 'MemoryCollector'),
+            'cpu': ('collectors.cpu', 'CPUCollector'),
+            'filesystem': ('collectors.filesystem', 'FilesystemCollector'),
+            'network': ('collectors.network', 'NetworkCollector'),
+            'process': ('collectors.process', 'ProcessCollector'),
+            'sensors': ('collectors.sensors', 'SensorsCollector'),
+            'smart': ('collectors.smart', 'SmartCollector'),
+            'zfs': ('collectors.zfs', 'ZFSCollector'),
         }
         
         # Handle legacy sensor collector names
@@ -211,7 +211,7 @@ class EnvironmentAwareMetricsRegistry:
                         if (isinstance(attr, type) and 
                             hasattr(attr, 'collect') and
                             attr_name.endswith('Collector') and
-                            attr_name not in ['BaseCollector', 'EnvironmentAwareCollector']):
+                            attr_name not in ['BaseCollector']):
                             
                             collector_name = attr_name.lower().replace('collector', '')
                             
@@ -227,7 +227,7 @@ class EnvironmentAwareMetricsRegistry:
         except Exception as e:
             logger.error(f"Auto-discovery failed: {e}")
     
-    def register_collector(self, collector: EnvironmentAwareCollector):
+    def register_collector(self, collector: BaseCollector):
         """Register a new collector"""
         if not hasattr(collector, 'collect'):
             raise ValueError("Collector must have a collect method")
@@ -235,7 +235,7 @@ class EnvironmentAwareMetricsRegistry:
         self.collectors[collector.name] = collector
         logger.info(f"Manually registered collector: {collector.name}")
     
-    def get_collector(self, name: str) -> Optional[EnvironmentAwareCollector]:
+    def get_collector(self, name: str) -> Optional[BaseCollector]:
         """Get collector by name"""
         return self.collectors.get(name)
     
@@ -293,7 +293,7 @@ class EnvironmentAwareMetricsRegistry:
         
         return all_metrics
     
-    async def _collect_single_async(self, name: str, collector: EnvironmentAwareCollector) -> List[MetricValue]:
+    async def _collect_single_async(self, name: str, collector: BaseCollector) -> List[MetricValue]:
         """Collect metrics from a single collector asynchronously"""
         try:
             logger.debug("Starting async collection", collector=name, event_type="async_collection_start")

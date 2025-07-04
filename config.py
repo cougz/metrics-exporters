@@ -19,9 +19,9 @@ class Config(BaseSettings):
     otlp_headers: Dict[str, str] = Field(default_factory=dict, description="OTLP headers")
     
     # Collection settings
-    enabled_collectors: List[str] = Field(
-        default=["memory", "cpu", "filesystem", "network", "process"], 
-        description="Enabled collectors"
+    enabled_collectors_str: str = Field(
+        default="memory,cpu,filesystem,network,process", 
+        description="Enabled collectors (comma-separated)"
     )
     
     # Server settings (for health checks only)
@@ -34,6 +34,9 @@ class Config(BaseSettings):
     
     # Instance identification
     instance_id: str = Field(default="", description="Override instance ID")
+    
+    # Security settings (simplified)
+    enable_request_logging: bool = Field(default=True, description="Enable HTTP request logging")
     
     class Config:
         env_prefix = ""
@@ -57,11 +60,15 @@ class Config(BaseSettings):
             return headers
         return v or {}
     
-    @validator('enabled_collectors', pre=True)
-    def parse_enabled_collectors(cls, v):
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(',') if item.strip()]
-        return v or []
+    @property
+    def enabled_collectors(self) -> List[str]:
+        """Get enabled collectors as a list"""
+        return [item.strip() for item in self.enabled_collectors_str.split(',') if item.strip()]
+    
+    @enabled_collectors.setter
+    def enabled_collectors(self, value: List[str]):
+        """Set enabled collectors from a list"""
+        self.enabled_collectors_str = ','.join(value)
     
     @validator('log_file')
     def ensure_log_directory(cls, v):
