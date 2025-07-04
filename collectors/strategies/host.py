@@ -915,7 +915,7 @@ class HostStrategy(CollectionStrategy):
                 try:
                     # Get SMART data for the disk
                     result = subprocess.run(
-                        ["smartctl", "-A", "-j", disk_device],
+                        ["sudo", "smartctl", "-A", "-j", disk_device],
                         capture_output=True,
                         text=True,
                         timeout=20

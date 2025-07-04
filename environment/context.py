@@ -454,7 +454,7 @@ class RuntimeEnvironment:
             for drive in test_drives:
                 try:
                     result = subprocess.run(
-                        ["smartctl", "-A", "-j", str(drive)],
+                        ["sudo", "smartctl", "-A", "-j", str(drive)],
                         capture_output=True,
                         text=True,
                         timeout=15
