@@ -110,7 +110,7 @@ class FilesystemCollector(EnvironmentAwareCollector):
                                     labels=device_labels.copy(),
                                     help_text=help_text,
                                     metric_type=MetricType.COUNTER,
-                                    unit="seconds" if "time" in metric_name else None
+                                    unit="seconds" if "time" in metric_name else "1"
                                 ))
                         
                         # Byte metrics

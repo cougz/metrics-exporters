@@ -85,7 +85,8 @@ class ZFSCollector(EnvironmentAwareCollector):
                                 value=float(1 if pool["readonly"] else 0),
                                 labels=pool_labels.copy(),
                                 help_text="ZFS pool readonly status (1 = readonly, 0 = read-write)",
-                                metric_type=MetricType.GAUGE
+                                metric_type=MetricType.GAUGE,
+                                unit="1"
                             ))
                         
                         # ZFS pool I/O metrics
@@ -98,7 +99,12 @@ class ZFSCollector(EnvironmentAwareCollector):
                         
                         for pool_key, metric_name, help_text in zfs_io_metrics:
                             if pool_key in pool:
-                                unit = "bytes" if "bytes" in pool_key else None
+                                if "bytes" in pool_key:
+                                    unit = "By/s"
+                                elif "operations" in pool_key:
+                                    unit = "1/s"
+                                else:
+                                    unit = None
                                 metrics.append(MetricValue(
                                     name=metric_name,
                                     value=float(pool[pool_key]),

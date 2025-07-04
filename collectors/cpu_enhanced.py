@@ -137,7 +137,7 @@ class CPUCollector(EnvironmentAwareCollector):
             # Process statistics (host environments)
             process_fields = [
                 ("running_processes", "node_procs_running", "Number of running processes"),
-                ("total_processes", "node_procs_total", "Total number of processes"),
+                ("total_processes", "node_procs_total", "Total number of processes (from loadavg)"),
                 ("processes_created", "node_forks_total", "Total number of processes created"),
                 ("processes_blocked", "node_procs_blocked", "Number of blocked processes"),
             ]
@@ -150,7 +150,8 @@ class CPUCollector(EnvironmentAwareCollector):
                         value=float(data[data_key]),
                         labels=labels.copy(),
                         help_text=help_text,
-                        metric_type=metric_type
+                        metric_type=metric_type,
+                        unit="1"
                     ))
             
             # Container CPU limits (container environments)

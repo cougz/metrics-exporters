@@ -692,7 +692,7 @@ class HostStrategy(CollectionStrategy):
                     last_line = lines[-1]
                     try:
                         parts = last_line.split()
-                        if len(parts) >= 7:
+                        if len(parts) >= 5:
                             return {
                                 "read_operations_per_sec": float(parts[1]),
                                 "write_operations_per_sec": float(parts[2]),

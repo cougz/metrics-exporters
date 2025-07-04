@@ -63,7 +63,7 @@ class NetworkCollector(EnvironmentAwareCollector):
                                     labels=interface_labels.copy(),
                                     help_text=help_text,
                                     metric_type=MetricType.COUNTER,
-                                    unit="bytes" if "bytes" in stat_key else None
+                                    unit="bytes" if "bytes" in stat_key else "1"
                                 ))
                         
                         # Extended metrics (host environments)
@@ -85,7 +85,8 @@ class NetworkCollector(EnvironmentAwareCollector):
                                     value=float(stats[stat_key]),
                                     labels=interface_labels.copy(),
                                     help_text=help_text,
-                                    metric_type=MetricType.COUNTER
+                                    metric_type=MetricType.COUNTER,
+                                    unit="1"
                                 ))
                         
                         # Interface information
@@ -94,7 +95,8 @@ class NetworkCollector(EnvironmentAwareCollector):
                             value=1.0,  # Assume interface is up if we have stats
                             labels=interface_labels.copy(),
                             help_text="Network interface operational state",
-                            metric_type=MetricType.GAUGE
+                            metric_type=MetricType.GAUGE,
+                            unit="1"
                         ))
                         
                         # Interface info with additional labels
@@ -107,7 +109,8 @@ class NetworkCollector(EnvironmentAwareCollector):
                             value=1.0,
                             labels=info_labels,
                             help_text="Network interface information",
-                            metric_type=MetricType.GAUGE
+                            metric_type=MetricType.GAUGE,
+                            unit="1"
                         ))
                         
                         # Try to get interface speed (best effort)

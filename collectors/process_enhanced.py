@@ -33,8 +33,9 @@ class ProcessCollector(EnvironmentAwareCollector):
                     name="node_processes_total",
                     value=float(data["process_count"]),
                     labels=labels.copy(),
-                    help_text="Number of processes",
-                    metric_type=MetricType.GAUGE
+                    help_text="Total number of processes (from /proc directory count)",
+                    metric_type=MetricType.GAUGE,
+                    unit="1"
                 ))
             
             # Process state metrics (host environments)
@@ -53,7 +54,8 @@ class ProcessCollector(EnvironmentAwareCollector):
                         value=float(data[data_key]),
                         labels=labels.copy(),
                         help_text=help_text,
-                        metric_type=metric_type
+                        metric_type=metric_type,
+                        unit="1"
                     ))
             
             logger.debug(f"Collected {len(metrics)} process metrics using {result.method_used}")
