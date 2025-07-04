@@ -109,8 +109,7 @@ class EnvironmentAwareMetricsRegistry:
             'filesystem': ('collectors.filesystem_enhanced', 'FilesystemCollector'),
             'network': ('collectors.network_enhanced', 'NetworkCollector'),
             'process': ('collectors.process_enhanced', 'ProcessCollector'),
-            'sensors_cpu': ('collectors.sensors_cpu_enhanced', 'SensorsCPUCollector'),
-            'sensors_nvme': ('collectors.sensors_nvme_enhanced', 'SensorsNVMeCollector'),
+            'sensors': ('collectors.sensors_enhanced', 'SensorsCollector'),
             'zfs': ('collectors.zfs_enhanced', 'ZFSCollector'),
         }
         

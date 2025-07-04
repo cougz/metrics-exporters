@@ -84,19 +84,12 @@ class RuntimeEnvironment:
             else:
                 logger.info("ZFS not detected, skipping zfs collector")
             
-            # Check for CPU temperature sensors
-            if self._has_cpu_sensors():
-                collectors.append("sensors_cpu")
-                logger.info("CPU sensors detected, enabling sensors_cpu collector")
+            # Check for any sensors (CPU, NVMe, etc)
+            if self._has_sensors():
+                collectors.append("sensors")
+                logger.info("Hardware sensors detected, enabling sensors collector")
             else:
-                logger.info("CPU sensors not detected, skipping sensors_cpu collector")
-            
-            # Check for NVMe/disk temperature capability
-            if self._has_nvme_sensors():
-                collectors.append("sensors_nvme")
-                logger.info("NVMe/disk sensors detected, enabling sensors_nvme collector")
-            else:
-                logger.info("NVMe/disk sensors not detected, skipping sensors_nvme collector")
+                logger.info("No hardware sensors detected, skipping sensors collector")
         
         logger.info(f"Auto-detected collectors for {self.environment_type.value}: {collectors}")
         return collectors
@@ -104,6 +97,11 @@ class RuntimeEnvironment:
     def get_collection_interval(self) -> int:
         """Get recommended collection interval for the environment"""
         return 30  # Standard interval for all environments
+    
+    def _has_sensors(self) -> bool:
+        """Check if any hardware sensors are available"""
+        # This combines the previous CPU and NVMe sensor checks
+        return self._has_cpu_sensors() or self._has_nvme_sensors()
     
     def _has_zfs(self) -> bool:
         """Check if ZFS pools are available"""

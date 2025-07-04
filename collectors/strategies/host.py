@@ -70,6 +70,15 @@ class HostStrategy(CollectionStrategy):
             return self._create_not_supported_result("NVMe/disk sensors not available on this system")
         return self._collect_sensors_nvme_full()
     
+    def collect_sensors(self) -> StrategyResult:
+        """Collect all sensor metrics using sensors command"""
+        # This unified method replaces the separate CPU and NVMe sensor methods
+        return self._collect_sensors_unified()
+    
+    def collect_smart(self) -> StrategyResult:
+        """Collect SMART disk health data"""
+        return self._collect_smart_data()
+    
     def collect_proxmox_system(self) -> StrategyResult:
         """Collect Proxmox-specific system metrics"""
         return self._collect_proxmox_system()
@@ -746,6 +755,243 @@ class HostStrategy(CollectionStrategy):
         
         except Exception as e:
             return self._create_failure_result([f"NVMe sensors collection failed: {e}"])
+    
+    def _collect_sensors_unified(self) -> StrategyResult:
+        """Collect all sensors using unified sensors command"""
+        try:
+            # Check if sensors command is available
+            import subprocess
+            result = subprocess.run(
+                ["which", "sensors"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return self._create_not_supported_result("sensors command not available")
+            
+            # Run sensors command to get all sensor data
+            result = subprocess.run(
+                ["sensors", "-A", "-j"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode != 0:
+                return self._create_failure_result([f"sensors command failed: {result.stderr}"])
+            
+            # Parse JSON output
+            try:
+                import json
+                sensors_data = json.loads(result.stdout)
+                
+                # Parse all sensors and categorize them
+                all_sensors = []
+                for chip_name, chip_data in sensors_data.items():
+                    if isinstance(chip_data, dict):
+                        for feature_name, feature_data in chip_data.items():
+                            if isinstance(feature_data, dict):
+                                # Look for temperature input data
+                                temp_input_key = None
+                                temp_input_value = None
+                                temp_alarm = 0
+                                
+                                for key, value in feature_data.items():
+                                    if isinstance(value, (int, float)) and key.endswith("_input") and "temp" in key:
+                                        temp_input_key = key
+                                        temp_input_value = value
+                                    elif key.endswith("_alarm") and "temp" in key:
+                                        temp_alarm = value
+                                
+                                if temp_input_key and temp_input_value is not None:
+                                    sensor_info = {
+                                        "chip": chip_name,
+                                        "feature": feature_name,
+                                        "sensor_name": f"{chip_name}_{feature_name}",
+                                        "temp_celsius": temp_input_value,
+                                        "alarm": temp_alarm
+                                    }
+                                    
+                                    # Determine sensor type
+                                    if "coretemp" in chip_name:
+                                        sensor_info["sensor_type"] = "cpu"
+                                    elif "nvme" in chip_name:
+                                        sensor_info["sensor_type"] = "nvme"
+                                    else:
+                                        sensor_info["sensor_type"] = "other"
+                                    
+                                    # Extract thresholds
+                                    temp_prefix = temp_input_key.replace("_input", "")
+                                    
+                                    max_key = f"{temp_prefix}_max"
+                                    if max_key in feature_data and isinstance(feature_data[max_key], (int, float)):
+                                        sensor_info["temp_max_celsius"] = feature_data[max_key]
+                                    
+                                    crit_key = f"{temp_prefix}_crit"
+                                    if crit_key in feature_data and isinstance(feature_data[crit_key], (int, float)):
+                                        sensor_info["temp_crit_celsius"] = feature_data[crit_key]
+                                    
+                                    all_sensors.append(sensor_info)
+                
+                if all_sensors:
+                    return self._create_success_result({"sensors": all_sensors}, CollectionMethod.HARDWARE_ACCESS)
+                else:
+                    return self._create_failure_result(["No sensor data found"])
+                    
+            except json.JSONDecodeError as e:
+                return self._create_failure_result([f"Failed to parse sensors JSON: {e}"])
+            
+        except Exception as e:
+            return self._create_failure_result([f"Sensors collection failed: {e}"])
+    
+    def _collect_smart_data(self) -> StrategyResult:
+        """Collect SMART data from all disks"""
+        try:
+            # Check if smartctl is available
+            import subprocess
+            result = subprocess.run(
+                ["which", "smartctl"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return self._create_not_supported_result("smartctl command not available")
+            
+            # Get list of disks
+            disks = self._get_all_disks_for_smart()
+            if not disks:
+                return self._create_not_supported_result("No disks found for SMART monitoring")
+            
+            all_disk_data = []
+            errors = []
+            
+            for disk in disks:
+                try:
+                    # Get SMART data for each disk
+                    result = subprocess.run(
+                        ["sudo", "smartctl", "-a", "-j", disk],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    if result.returncode in [0, 4]:  # 0 = success, 4 = some SMART errors but data available
+                        try:
+                            import json
+                            smart_data = json.loads(result.stdout)
+                            
+                            disk_info = {
+                                "device": disk,
+                                "model": smart_data.get("model_name", "unknown"),
+                                "serial": smart_data.get("serial_number", "unknown"),
+                                "interface": smart_data.get("device", {}).get("type", "unknown")
+                            }
+                            
+                            # SMART health status
+                            smart_status = smart_data.get("smart_status", {})
+                            if "passed" in smart_status:
+                                disk_info["smart_passed"] = smart_status["passed"]
+                            
+                            # Power-on time
+                            power_on_time = smart_data.get("power_on_time", {})
+                            if "hours" in power_on_time:
+                                disk_info["power_on_hours"] = power_on_time["hours"]
+                            
+                            # Power cycles
+                            power_cycle_count = smart_data.get("power_cycle_count")
+                            if power_cycle_count:
+                                disk_info["power_cycles"] = power_cycle_count
+                            
+                            # Temperature (from various sources)
+                            temp = smart_data.get("temperature", {})
+                            if "current" in temp:
+                                disk_info["temperature_celsius"] = temp["current"]
+                            
+                            # Process interface-specific data
+                            if disk_info["interface"] == "nvme":
+                                # NVMe-specific data
+                                nvme_log = smart_data.get("nvme_smart_health_information_log", {})
+                                if nvme_log:
+                                    disk_info["nvme_smart_log"] = nvme_log
+                                    # Also extract temperature if not already found
+                                    if "temperature" in nvme_log and "temperature_celsius" not in disk_info:
+                                        disk_info["temperature_celsius"] = nvme_log["temperature"]
+                            else:
+                                # ATA SMART attributes
+                                ata_attrs = smart_data.get("ata_smart_attributes", {}).get("table", [])
+                                if ata_attrs:
+                                    disk_info["ata_smart_attributes"] = []
+                                    for attr in ata_attrs:
+                                        attr_info = {
+                                            "id": attr.get("id"),
+                                            "name": attr.get("name"),
+                                            "value": attr.get("value"),
+                                            "worst": attr.get("worst"),
+                                            "threshold": attr.get("thresh")
+                                        }
+                                        # Get raw value
+                                        raw = attr.get("raw", {})
+                                        if isinstance(raw, dict):
+                                            attr_info["raw_value"] = raw.get("value", 0)
+                                        else:
+                                            attr_info["raw_value"] = raw
+                                        
+                                        disk_info["ata_smart_attributes"].append(attr_info)
+                            
+                            all_disk_data.append(disk_info)
+                            
+                        except json.JSONDecodeError as e:
+                            errors.append(f"Failed to parse SMART JSON for {disk}: {e}")
+                    else:
+                        errors.append(f"smartctl failed for {disk}: {result.stderr}")
+                        
+                except Exception as e:
+                    errors.append(f"Error collecting SMART data for {disk}: {e}")
+            
+            if all_disk_data:
+                return self._create_success_result({"disks": all_disk_data}, CollectionMethod.HARDWARE_ACCESS)
+            else:
+                return self._create_failure_result(errors or ["No SMART data collected"])
+                
+        except Exception as e:
+            return self._create_failure_result([f"SMART collection failed: {e}"])
+    
+    def _get_all_disks_for_smart(self) -> List[str]:
+        """Get list of all disks for SMART monitoring"""
+        disks = []
+        
+        try:
+            from pathlib import Path
+            dev_path = Path("/dev")
+            
+            # SATA/SCSI disks (sda, sdb, etc.)
+            for item in dev_path.glob("sd[a-z]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+            # NVMe disks - use character devices for SMART access
+            for item in dev_path.glob("nvme[0-9]"):
+                if item.is_char_device():
+                    disks.append(str(item))
+            
+            # IDE disks (less common)
+            for item in dev_path.glob("hd[a-z]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+            # Virtual disks (vda, vdb, etc.)
+            for item in dev_path.glob("vd[a-z]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+            logger.debug(f"Found {len(disks)} disks for SMART monitoring: {disks}")
+            
+        except Exception as e:
+            logger.error(f"Error enumerating disks: {e}")
+        
+        return sorted(disks)
     
     def _collect_cpu_temperatures(self) -> Optional[List[Dict[str, Any]]]:
         """Collect CPU temperature sensors using sensors command"""

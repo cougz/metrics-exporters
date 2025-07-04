@@ -43,19 +43,27 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 ### Process Metrics
 - `node_processes_total` - Number of processes
 
-### CPU Sensor Metrics (Host environments only)
-- `node_hwmon_temp_celsius{sensor,chip,feature}` - Hardware monitor temperature in Celsius
-- `node_hwmon_temp_crit_celsius{sensor,chip,feature}` - Hardware monitor critical temperature threshold
-- `node_hwmon_temp_max_celsius{sensor,chip,feature}` - Hardware monitor maximum temperature threshold
-- `node_hwmon_fan_rpm{sensor,chip,type}` - Hardware monitor fan speed in RPM
-- `node_hwmon_voltage_volts{sensor,chip,type}` - Hardware monitor voltage in volts
-- `node_hwmon_power_watts{sensor,chip,type}` - Hardware monitor power consumption in watts
+### Hardware Sensor Metrics (Host environments only - unified sensors collector)
+- `system.cpu.temperature{sensor.chip,sensor.type,cpu.core,cpu.package}` - CPU temperature in Celsius
+- `system.cpu.temperature.threshold{sensor.chip,sensor.type,cpu.core,cpu.package,threshold.type}` - CPU temperature thresholds
+- `system.cpu.temperature.alarm{sensor.chip,sensor.type,cpu.core,cpu.package}` - CPU temperature alarm state
+- `system.nvme.temperature{sensor.chip,sensor.type,nvme.device,nvme.sensor}` - NVMe temperature in Celsius
+- `system.nvme.temperature.threshold{sensor.chip,sensor.type,nvme.device,nvme.sensor,threshold.type}` - NVMe temperature thresholds
+- `system.nvme.temperature.alarm{sensor.chip,sensor.type,nvme.device,nvme.sensor}` - NVMe temperature alarm state
 
-### NVMe/Disk Sensor Metrics (Host environments only)
-- `node_disk_temperature_celsius{device,model,interface}` - Disk temperature in Celsius
-- `node_disk_temp_warning_celsius{device,model,interface}` - Disk temperature warning threshold
-- `node_disk_temp_critical_celsius{device,model,interface}` - Disk temperature critical threshold
-- `node_disk_smart_health_ok{device,model,interface}` - Disk SMART health status (1 = healthy, 0 = unhealthy)
+### SMART Disk Metrics (Host environments only - optional smart collector)
+- `disk.smart.health_status{device,model,serial,interface}` - SMART overall health (1=passed, 0=failed)
+- `disk.smart.temperature{device,model,serial,interface}` - Disk temperature from SMART
+- `disk.smart.power_on_hours{device,model,serial,interface}` - Total power-on hours
+- `disk.smart.power_cycles{device,model,serial,interface}` - Power cycle count
+- `disk.smart.attribute.raw_value{device,model,serial,interface,attribute_id,attribute_name}` - SMART attribute raw values
+- `disk.nvme.critical_warning{device,model,serial}` - NVMe critical warning flags
+- `disk.nvme.available_spare_percent{device,model,serial}` - NVMe available spare percentage
+- `disk.nvme.percentage_used{device,model,serial}` - NVMe percentage of life used
+- `disk.nvme.data_read_bytes{device,model,serial}` - Total data read in bytes
+- `disk.nvme.data_written_bytes{device,model,serial}` - Total data written in bytes
+- `disk.nvme.media_errors{device,model,serial}` - NVMe media error count
+- `disk.nvme.unsafe_shutdowns{device,model,serial}` - NVMe unsafe shutdown count
 
 ### Labels
 All metrics include standard labels:
@@ -87,6 +95,9 @@ sudo useradd -r -s /bin/false otelcol
 
 # Set permissions
 sudo chown -R otelcol:otelcol /opt/metrics-exporters
+
+# Configure sudo for SMART collector (optional - only if using smart collector)
+echo 'otelcol ALL=(ALL) NOPASSWD: /usr/sbin/smartctl' | sudo tee /etc/sudoers.d/metrics-exporter
 ```
 
 ### 2. Service Configuration
@@ -168,7 +179,11 @@ Environment=PROMETHEUS_FILE=/opt/metrics-exporters/data/metrics.prom
 Environment=COLLECTION_INTERVAL=30
 Environment=METRICS_PORT=9100
 
-# Collectors
+# Collectors (auto-detected by default based on environment)
+# Default collectors: memory,cpu,filesystem,network,process
+# Host-only collectors: zfs (if ZFS detected), sensors (if hardware sensors detected)
+# Optional collectors: smart (disabled by default, requires sudo configuration)
+# To enable SMART collector: ENABLED_COLLECTORS=memory,cpu,filesystem,network,process,smart
 Environment=ENABLED_COLLECTORS=memory,filesystem,process
 
 # Logging
@@ -226,6 +241,22 @@ scrape_configs:
 - `GET /collectors` - List of available collectors
 - `POST /collect` - Manually trigger metrics collection
 
+## Collectors
+
+### Auto-detected Collectors
+The system automatically detects and enables appropriate collectors based on the environment:
+
+- **Container environments**: memory, cpu, filesystem, network, process
+- **Host environments**: All above + zfs (if ZFS detected), sensors (if hardware sensors available)
+
+### Unified Sensors Collector
+The `sensors` collector replaces the previous separate `sensors_cpu` and `sensors_nvme` collectors. It uses the `sensors` command to collect all hardware temperature data and exports it using OpenTelemetry semantic conventions.
+
+### Optional SMART Collector
+The `smart` collector provides comprehensive SMART disk health data but requires:
+1. Manual enablement in `ENABLED_COLLECTORS`
+2. Sudo configuration (see installation section)
+
 ## Architecture
 
 The application uses a **clean architecture** with configurable export formats:
@@ -268,13 +299,15 @@ Configuration
 │   └── server.py              # FastAPI application
 ├── collectors/
 │   ├── __init__.py
-│   ├── base.py               # Base collector class
-│   ├── memory.py             # Memory metrics collector
+│   ├── base_enhanced.py      # Environment-aware base collector
+│   ├── memory_enhanced.py    # Memory metrics collector
+│   ├── cpu_enhanced.py       # CPU metrics collector
 │   ├── filesystem_enhanced.py # Filesystem metrics collector
-│   ├── sensors_cpu_enhanced.py # CPU temperature sensors
-│   ├── sensors_nvme_enhanced.py # NVMe/disk temperature sensors
-│   ├── zfs_enhanced.py       # ZFS pool metrics collector
-│   └── process.py            # Process metrics collector
+│   ├── network_enhanced.py   # Network metrics collector
+│   ├── process_enhanced.py   # Process metrics collector
+│   ├── zfs_enhanced.py       # ZFS pool metrics (host only)
+│   ├── sensors_enhanced.py   # Unified hardware sensors (host only)
+│   └── smart_enhanced.py     # SMART disk data (host only, optional)
 ├── environment/
 │   ├── __init__.py
 │   ├── detection.py          # Environment detection logic
