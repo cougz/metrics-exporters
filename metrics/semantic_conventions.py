@@ -41,27 +41,27 @@ class SemanticConventions:
             "CPU utilization as a fraction"
         ),
         "node_cpu_user_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "user"}
         ),
         "node_cpu_system_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "system"}
         ),
         "node_cpu_idle_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "idle"}
         ),
         "node_cpu_iowait_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "iowait"}
         ),
         "node_cpu_frequency_hertz": OTelMetricMapping(
@@ -97,27 +97,27 @@ class SemanticConventions:
             "15-minute load average"
         ),
         "node_cpu_guest_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "guest"}
         ),
         "node_cpu_irq_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "irq"}
         ),
         "node_cpu_softirq_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "softirq"}
         ),
         "node_cpu_steal_percent": OTelMetricMapping(
-            "system.cpu.time",
+            "system.cpu.time.ratio",
             MetricUnit.RATIO,
-            "CPU time usage by state",
+            "CPU time usage by state as ratio",
             {"state": "steal"}
         ),
         "node_cpu_seconds_total": OTelMetricMapping(
@@ -368,6 +368,18 @@ class SemanticConventions:
             "Network errors",
             {"direction": "transmit"}
         ),
+        "node_network_receive_errs_total": OTelMetricMapping(
+            "system.network.errors",
+            MetricUnit.COUNT,
+            "Network errors",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_errs_total": OTelMetricMapping(
+            "system.network.errors",
+            MetricUnit.COUNT,
+            "Network errors",
+            {"direction": "transmit"}
+        ),
         "node_network_receive_bytes_per_sec": OTelMetricMapping(
             "system.network.io.rate",
             MetricUnit.BYTES_PER_SECOND,
@@ -450,7 +462,8 @@ class SemanticConventions:
         "node_processes_total": OTelMetricMapping(
             "system.process.count",
             MetricUnit.COUNT,
-            "Number of processes"
+            "Number of processes",
+            {"state": "total"}
         ),
         "node_processes_running": OTelMetricMapping(
             "system.process.count",
@@ -485,7 +498,8 @@ class SemanticConventions:
         "node_procs_total": OTelMetricMapping(
             "system.process.count",
             MetricUnit.COUNT,
-            "Total number of processes"
+            "Total number of processes",
+            {"state": "total"}
         ),
         "node_forks_total": OTelMetricMapping(
             "system.process.created",
@@ -530,25 +544,25 @@ class SemanticConventions:
             "system.filesystem.io.rate",
             MetricUnit.BYTES_PER_SECOND,
             "Filesystem I/O rate",
-            {"direction": "read", "fstype": "zfs"}
+            {"direction": "read", "fstype": "zfs", "type": "bytes"}
         ),
         "node_zfs_pool_write_bytes_per_sec": OTelMetricMapping(
             "system.filesystem.io.rate",
             MetricUnit.BYTES_PER_SECOND,
             "Filesystem I/O rate",
-            {"direction": "write", "fstype": "zfs"}
+            {"direction": "write", "fstype": "zfs", "type": "bytes"}
         ),
         "node_zfs_pool_read_ops_per_sec": OTelMetricMapping(
-            "system.filesystem.operations.rate",
+            "system.filesystem.io.rate",
             MetricUnit.COUNT,
-            "Filesystem operations rate",
-            {"direction": "read", "fstype": "zfs"}
+            "Filesystem I/O operations rate",
+            {"direction": "read", "fstype": "zfs", "type": "operations"}
         ),
         "node_zfs_pool_write_ops_per_sec": OTelMetricMapping(
-            "system.filesystem.operations.rate",
+            "system.filesystem.io.rate",
             MetricUnit.COUNT,
-            "Filesystem operations rate",
-            {"direction": "write", "fstype": "zfs"}
+            "Filesystem I/O operations rate",
+            {"direction": "write", "fstype": "zfs", "type": "operations"}
         ),
         "node_zfs_pool_readonly": OTelMetricMapping(
             "system.filesystem.readonly",

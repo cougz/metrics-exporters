@@ -121,9 +121,9 @@ class MetricTransformer:
                 # Single metric, no consolidation needed
                 consolidated_metrics.extend(metric_group)
             else:
-                # Multiple metrics with same name, they should already have
-                # appropriate state/direction labels from transformation
-                consolidated_metrics.extend(metric_group)
+                # Multiple metrics with same name, deduplicate by labels
+                deduplicated_group = self._deduplicate_metrics(metric_group)
+                consolidated_metrics.extend(deduplicated_group)
         
         # Add standalone metrics
         consolidated_metrics.extend(standalone_metrics)
@@ -135,6 +135,36 @@ class MetricTransformer:
         # Metrics with state, direction, or similar labels are candidates for consolidation
         consolidation_labels = ['state', 'direction', 'type', 'status']
         return any(label in metric.labels for label in consolidation_labels)
+    
+    def _deduplicate_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
+        """Deduplicate metrics with the same name and labels"""
+        # Create a key for each metric based on name and labels
+        metric_map = {}
+        
+        for metric in metrics:
+            # Create a key from metric name and sorted labels
+            label_key = tuple(sorted(metric.labels.items()))
+            key = (metric.name, label_key)
+            
+            if key in metric_map:
+                # If we have a duplicate, keep the one with the most recent timestamp
+                # or prefer the one with non-zero value
+                existing_metric = metric_map[key]
+                if (metric.timestamp and existing_metric.timestamp and 
+                    metric.timestamp > existing_metric.timestamp):
+                    metric_map[key] = metric
+                elif metric.value != 0 and existing_metric.value == 0:
+                    metric_map[key] = metric
+                elif existing_metric.value == 0 and metric.value != 0:
+                    # Keep the existing non-zero metric
+                    pass
+                else:
+                    # Keep the existing metric to maintain deterministic behavior
+                    logger.debug(f"Removing duplicate metric: {metric.name} with labels {metric.labels}")
+            else:
+                metric_map[key] = metric
+        
+        return list(metric_map.values())
     
     def add_calculated_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
         """Add calculated utilization metrics where appropriate"""
@@ -220,11 +250,11 @@ class MetricTransformer:
         return utilizations
     
     def _calculate_cpu_utilization(self, metrics: List[MetricValue]) -> Optional[MetricValue]:
-        """Calculate CPU utilization from CPU time metrics"""
+        """Calculate CPU utilization from CPU time ratio metrics"""
         cpu_times = {}
         
         for metric in metrics:
-            if metric.name == "system.cpu.time":
+            if metric.name == "system.cpu.time.ratio":
                 state = metric.labels.get("state")
                 if state:
                     cpu_times[state] = metric.value
@@ -237,7 +267,7 @@ class MetricTransformer:
             # Get base labels (excluding state)
             base_labels = {}
             for metric in metrics:
-                if metric.name == "system.cpu.time":
+                if metric.name == "system.cpu.time.ratio":
                     base_labels = {k: v for k, v in metric.labels.items() if k != "state"}
                     break
             

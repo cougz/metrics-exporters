@@ -200,7 +200,11 @@ class OpenTelemetryExporter:
                     except Exception as e:
                         logger.error("Failed to record metric", metric_name=metric.name, error=str(e))
             
-            logger.debug("Exported metrics to OpenTelemetry", metrics_count=len(metrics))
+            logger.info("Exported metrics to OpenTelemetry", 
+                       metrics_count=len(metrics), 
+                       endpoint=self.config.otel_endpoint,
+                       service_name=self.config.service_name,
+                       event_type="otlp_export")
             
         except Exception as e:
             logger.error("Failed to export metrics to OpenTelemetry", error=str(e), exc_info=True)

@@ -9,6 +9,7 @@ from opentelemetry.proto.common.v1 import common_pb2
 from opentelemetry.proto.resource.v1 import resource_pb2
 from .base import BaseExporter
 from metrics.models import MetricValue, MetricType
+from metrics.transformer import MetricTransformer
 from config import Config
 from logging_config import get_logger
 
@@ -24,6 +25,7 @@ class CleanOTLPExporter(BaseExporter):
         self.channel = None
         self.stub = None
         self._healthy = False
+        self.transformer = MetricTransformer(config)
     
     async def start(self) -> None:
         """Initialize gRPC connection"""
@@ -53,8 +55,21 @@ class CleanOTLPExporter(BaseExporter):
             return
         
         try:
+            # Apply OpenTelemetry semantic transformations if enabled
+            final_metrics = metrics
+            if self.config.use_otel_semconv:
+                transformed_metrics = self.transformer.transform_metrics(metrics)
+                enhanced_metrics = self.transformer.add_calculated_metrics(transformed_metrics)
+                final_metrics = self.transformer.remove_redundant_metrics(enhanced_metrics)
+                logger.info(
+                    "Applied OpenTelemetry transformations",
+                    original_count=len(metrics),
+                    final_count=len(final_metrics),
+                    event_type="otlp_transform"
+                )
+            
             # Group metrics by name for proper OTLP structure
-            grouped_metrics = self._group_metrics_by_name(metrics)
+            grouped_metrics = self._group_metrics_by_name(final_metrics)
             
             # Create OTLP metrics
             otlp_metrics = []
@@ -92,14 +107,36 @@ class CleanOTLPExporter(BaseExporter):
             # Send request
             response = await self.stub.Export(request, timeout=10.0)
             
-            logger.debug(
+            # Log sample metric names for debugging
+            sample_names = [metric.name for metric in final_metrics[:5]]
+            logger.info(
                 "Exported metrics via OTLP",
-                metric_count=len(metrics),
-                grouped_metrics=len(otlp_metrics)
+                metric_count=len(final_metrics),
+                grouped_metrics=len(otlp_metrics),
+                endpoint=self.config.otel_endpoint,
+                sample_metric_names=sample_names,
+                grpc_response_code=response.partial_success.rejected_data_points if hasattr(response, 'partial_success') else "success",
+                grpc_response_message=response.partial_success.error_message if hasattr(response, 'partial_success') and response.partial_success.error_message else "no_errors",
+                event_type="otlp_export"
             )
             
+        except grpc.RpcError as e:
+            logger.error(
+                "gRPC error during OTLP export",
+                grpc_code=e.code().name if hasattr(e, 'code') else 'unknown',
+                grpc_details=e.details() if hasattr(e, 'details') else str(e),
+                endpoint=self.config.otel_endpoint,
+                event_type="otlp_grpc_error"
+            )
+            self._healthy = False
         except Exception as e:
-            logger.error(f"Failed to export metrics via OTLP: {e}")
+            logger.error(
+                "Failed to export metrics via OTLP",
+                error=str(e),
+                error_type=type(e).__name__,
+                endpoint=self.config.otel_endpoint,
+                event_type="otlp_export_error"
+            )
             self._healthy = False
     
     async def shutdown(self) -> None:
@@ -112,6 +149,32 @@ class CleanOTLPExporter(BaseExporter):
     def is_healthy(self) -> bool:
         """Check if exporter is healthy"""
         return self._healthy
+    
+    async def test_connection(self) -> dict:
+        """Test the gRPC connection and return status"""
+        if not self.channel:
+            return {"connected": False, "error": "No channel established"}
+        
+        try:
+            # Test channel connectivity
+            connectivity = self.channel.get_state()
+            
+            # Try a simple health check if available
+            status = {
+                "connected": connectivity.name != "TRANSIENT_FAILURE",
+                "state": connectivity.name,
+                "endpoint": self.config.otel_endpoint,
+                "healthy": self._healthy
+            }
+            
+            return status
+            
+        except Exception as e:
+            return {
+                "connected": False,
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
     
     def _group_metrics_by_name(self, metrics: List[MetricValue]) -> Dict[str, List[MetricValue]]:
         """Group metrics by name for OTLP structure"""
@@ -194,8 +257,12 @@ class CleanOTLPExporter(BaseExporter):
     def _create_resource(self) -> resource_pb2.Resource:
         """Create OTLP resource"""
         resource_attrs = self.config.get_otel_resource_attributes()
-        attributes = []
         
+        # Add transformer resource attributes if transformations are enabled
+        if self.config.use_otel_semconv:
+            resource_attrs.update(self.transformer.get_resource_attributes())
+        
+        attributes = []
         for key, value in resource_attrs.items():
             attr = common_pb2.KeyValue(
                 key=key,
