@@ -67,7 +67,19 @@ class SemanticConventions:
         "node_cpu_frequency_hertz": OTelMetricMapping(
             "system.cpu.frequency",
             MetricUnit.HERTZ,
-            "CPU frequency"
+            "Current CPU frequency"
+        ),
+        "node_cpu_frequency_max_hertz": OTelMetricMapping(
+            "system.cpu.frequency",
+            MetricUnit.HERTZ,
+            "Maximum CPU frequency",
+            {"type": "max"}
+        ),
+        "node_cpu_frequency_min_hertz": OTelMetricMapping(
+            "system.cpu.frequency",
+            MetricUnit.HERTZ,
+            "Minimum CPU frequency",
+            {"type": "min"}
         ),
         "node_load1": OTelMetricMapping(
             "system.cpu.load_average.1m",
@@ -83,6 +95,48 @@ class SemanticConventions:
             "system.cpu.load_average.15m",
             MetricUnit.RATIO,
             "15-minute load average"
+        ),
+        "node_cpu_guest_percent": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.RATIO,
+            "CPU time usage by state",
+            {"state": "guest"}
+        ),
+        "node_cpu_irq_percent": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.RATIO,
+            "CPU time usage by state",
+            {"state": "irq"}
+        ),
+        "node_cpu_softirq_percent": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.RATIO,
+            "CPU time usage by state",
+            {"state": "softirq"}
+        ),
+        "node_cpu_steal_percent": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.RATIO,
+            "CPU time usage by state",
+            {"state": "steal"}
+        ),
+        "node_cpu_seconds_total": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.SECONDS,
+            "Total CPU time spent",
+            {"state": "total"}
+        ),
+        "node_cpu_user_seconds_total": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.SECONDS,
+            "Total CPU time spent",
+            {"state": "user"}
+        ),
+        "node_cpu_system_seconds_total": OTelMetricMapping(
+            "system.cpu.time",
+            MetricUnit.SECONDS,
+            "Total CPU time spent",
+            {"state": "system"}
         ),
     }
     
@@ -129,6 +183,42 @@ class SemanticConventions:
             MetricUnit.RATIO,
             "Memory utilization as a fraction"
         ),
+        "node_memory_buffers_bytes": OTelMetricMapping(
+            "system.memory.usage",
+            MetricUnit.BYTES,
+            "Memory usage by state",
+            {"state": "buffers"}
+        ),
+        "node_memory_dirty_bytes": OTelMetricMapping(
+            "system.memory.usage",
+            MetricUnit.BYTES,
+            "Memory usage by state",
+            {"state": "dirty"}
+        ),
+        "node_memory_writeback_bytes": OTelMetricMapping(
+            "system.memory.usage",
+            MetricUnit.BYTES,
+            "Memory usage by state",
+            {"state": "writeback"}
+        ),
+        "node_memory_swap_total_bytes": OTelMetricMapping(
+            "system.memory.swap",
+            MetricUnit.BYTES,
+            "Swap memory by state",
+            {"state": "total"}
+        ),
+        "node_memory_swap_used_bytes": OTelMetricMapping(
+            "system.memory.swap",
+            MetricUnit.BYTES,
+            "Swap memory by state",
+            {"state": "used"}
+        ),
+        "node_memory_swap_free_bytes": OTelMetricMapping(
+            "system.memory.swap",
+            MetricUnit.BYTES,
+            "Swap memory by state",
+            {"state": "free"}
+        ),
     }
     
     # Disk Metrics
@@ -169,6 +259,24 @@ class SemanticConventions:
             "Disk operations",
             {"direction": "write"}
         ),
+        "node_disk_io_time_seconds_total": OTelMetricMapping(
+            "system.disk.time",
+            MetricUnit.SECONDS,
+            "Total time spent doing I/O",
+            {"type": "io"}
+        ),
+        "node_disk_read_time_seconds_total": OTelMetricMapping(
+            "system.disk.time",
+            MetricUnit.SECONDS,
+            "Total time spent",
+            {"direction": "read"}
+        ),
+        "node_disk_write_time_seconds_total": OTelMetricMapping(
+            "system.disk.time",
+            MetricUnit.SECONDS,
+            "Total time spent",
+            {"direction": "write"}
+        ),
     }
     
     # Filesystem Metrics
@@ -201,6 +309,12 @@ class SemanticConventions:
             "system.filesystem.utilization",
             MetricUnit.RATIO,
             "Filesystem utilization as a fraction"
+        ),
+        "node_filesystem_avail_bytes": OTelMetricMapping(
+            "system.filesystem.usage",
+            MetricUnit.BYTES,
+            "Filesystem usage by state",
+            {"state": "available"}
         ),
     }
     
@@ -254,59 +368,193 @@ class SemanticConventions:
             "Network errors",
             {"direction": "transmit"}
         ),
+        "node_network_receive_bytes_per_sec": OTelMetricMapping(
+            "system.network.io.rate",
+            MetricUnit.BYTES_PER_SECOND,
+            "Network I/O rate",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_bytes_per_sec": OTelMetricMapping(
+            "system.network.io.rate",
+            MetricUnit.BYTES_PER_SECOND,
+            "Network I/O rate",
+            {"direction": "transmit"}
+        ),
+        "node_network_receive_packets_per_sec": OTelMetricMapping(
+            "system.network.packets.rate",
+            MetricUnit.COUNT,
+            "Network packet rate",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_packets_per_sec": OTelMetricMapping(
+            "system.network.packets.rate",
+            MetricUnit.COUNT,
+            "Network packet rate",
+            {"direction": "transmit"}
+        ),
+        "node_network_receive_drop_total": OTelMetricMapping(
+            "system.network.dropped",
+            MetricUnit.COUNT,
+            "Network dropped packets",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_drop_total": OTelMetricMapping(
+            "system.network.dropped",
+            MetricUnit.COUNT,
+            "Network dropped packets",
+            {"direction": "transmit"}
+        ),
+        "node_network_receive_drop_per_sec": OTelMetricMapping(
+            "system.network.dropped.rate",
+            MetricUnit.COUNT,
+            "Network dropped packet rate",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_drop_per_sec": OTelMetricMapping(
+            "system.network.dropped.rate",
+            MetricUnit.COUNT,
+            "Network dropped packet rate",
+            {"direction": "transmit"}
+        ),
+        "node_network_receive_errs_per_sec": OTelMetricMapping(
+            "system.network.errors.rate",
+            MetricUnit.COUNT,
+            "Network error rate",
+            {"direction": "receive"}
+        ),
+        "node_network_transmit_errs_per_sec": OTelMetricMapping(
+            "system.network.errors.rate",
+            MetricUnit.COUNT,
+            "Network error rate",
+            {"direction": "transmit"}
+        ),
+        "node_network_up": OTelMetricMapping(
+            "system.network.state",
+            MetricUnit.COUNT,
+            "Network interface operational state"
+        ),
+        "node_network_info": OTelMetricMapping(
+            "system.network.info",
+            MetricUnit.COUNT,
+            "Network interface information"
+        ),
+        "node_network_speed_bytes": OTelMetricMapping(
+            "system.network.bandwidth",
+            MetricUnit.BYTES_PER_SECOND,
+            "Network interface speed"
+        ),
     }
     
     # Process Metrics
     PROCESS_MAPPINGS = {
         "node_processes_total": OTelMetricMapping(
-            "system.processes.count",
+            "system.process.count",
             MetricUnit.COUNT,
             "Number of processes"
         ),
         "node_processes_running": OTelMetricMapping(
-            "system.processes.count",
+            "system.process.count",
             MetricUnit.COUNT,
             "Number of processes by state",
             {"state": "running"}
         ),
         "node_processes_sleeping": OTelMetricMapping(
-            "system.processes.count",
+            "system.process.count",
             MetricUnit.COUNT,
             "Number of processes by state",
             {"state": "sleeping"}
         ),
         "node_processes_zombie": OTelMetricMapping(
-            "system.processes.count",
+            "system.process.count",
             MetricUnit.COUNT,
             "Number of processes by state",
             {"state": "zombie"}
         ),
+        "node_procs_running": OTelMetricMapping(
+            "system.process.count",
+            MetricUnit.COUNT,
+            "Number of processes by state",
+            {"state": "running"}
+        ),
+        "node_procs_blocked": OTelMetricMapping(
+            "system.process.count",
+            MetricUnit.COUNT,
+            "Number of processes by state",
+            {"state": "blocked"}
+        ),
+        "node_procs_total": OTelMetricMapping(
+            "system.process.count",
+            MetricUnit.COUNT,
+            "Total number of processes"
+        ),
+        "node_forks_total": OTelMetricMapping(
+            "system.process.created",
+            MetricUnit.COUNT,
+            "Total number of processes created"
+        ),
     }
     
-    # ZFS Metrics
+    # ZFS Metrics (mapped to filesystem for consistency)
     ZFS_MAPPINGS = {
         "node_zfs_pool_size_bytes": OTelMetricMapping(
-            "system.zfs.pool.usage",
+            "system.filesystem.usage",
             MetricUnit.BYTES,
-            "ZFS pool usage by state",
-            {"state": "total"}
+            "Filesystem usage by state",
+            {"state": "total", "fstype": "zfs"}
         ),
         "node_zfs_pool_allocated_bytes": OTelMetricMapping(
-            "system.zfs.pool.usage",
+            "system.filesystem.usage",
             MetricUnit.BYTES,
-            "ZFS pool usage by state",
-            {"state": "allocated"}
+            "Filesystem usage by state",
+            {"state": "used", "fstype": "zfs"}
         ),
         "node_zfs_pool_free_bytes": OTelMetricMapping(
-            "system.zfs.pool.usage",
+            "system.filesystem.usage",
             MetricUnit.BYTES,
-            "ZFS pool usage by state",
-            {"state": "free"}
+            "Filesystem usage by state",
+            {"state": "free", "fstype": "zfs"}
         ),
         "node_zfs_pool_capacity_percent": OTelMetricMapping(
-            "system.zfs.pool.utilization",
+            "system.filesystem.utilization",
             MetricUnit.RATIO,
-            "ZFS pool utilization as a fraction"
+            "Filesystem utilization as a fraction",
+            {"fstype": "zfs"}
+        ),
+        "node_zfs_pool_fragmentation_percent": OTelMetricMapping(
+            "system.filesystem.fragmentation",
+            MetricUnit.RATIO,
+            "Filesystem fragmentation as a fraction",
+            {"fstype": "zfs"}
+        ),
+        "node_zfs_pool_read_bytes_per_sec": OTelMetricMapping(
+            "system.filesystem.io.rate",
+            MetricUnit.BYTES_PER_SECOND,
+            "Filesystem I/O rate",
+            {"direction": "read", "fstype": "zfs"}
+        ),
+        "node_zfs_pool_write_bytes_per_sec": OTelMetricMapping(
+            "system.filesystem.io.rate",
+            MetricUnit.BYTES_PER_SECOND,
+            "Filesystem I/O rate",
+            {"direction": "write", "fstype": "zfs"}
+        ),
+        "node_zfs_pool_read_ops_per_sec": OTelMetricMapping(
+            "system.filesystem.operations.rate",
+            MetricUnit.COUNT,
+            "Filesystem operations rate",
+            {"direction": "read", "fstype": "zfs"}
+        ),
+        "node_zfs_pool_write_ops_per_sec": OTelMetricMapping(
+            "system.filesystem.operations.rate",
+            MetricUnit.COUNT,
+            "Filesystem operations rate",
+            {"direction": "write", "fstype": "zfs"}
+        ),
+        "node_zfs_pool_readonly": OTelMetricMapping(
+            "system.filesystem.readonly",
+            MetricUnit.COUNT,
+            "Filesystem readonly status",
+            {"fstype": "zfs"}
         ),
     }
     

@@ -30,7 +30,7 @@ class MetricTransformer:
         
         logger.debug(f"Transforming {len(metrics)} metrics to OpenTelemetry format")
         
-        # First pass: convert names and units
+        # First pass: convert names and units, only keep metrics that have mappings
         transformed_metrics = []
         for metric in metrics:
             transformed_metric = self._transform_single_metric(metric)
@@ -45,6 +45,11 @@ class MetricTransformer:
     
     def _transform_single_metric(self, metric: MetricValue) -> Optional[MetricValue]:
         """Transform a single metric to OpenTelemetry format"""
+        # Only transform metrics that have explicit mappings
+        if metric.name not in SemanticConventions.get_all_mappings():
+            logger.debug(f"Skipping unmapped metric: {metric.name}")
+            return None
+        
         # Get OpenTelemetry name
         otel_name = SemanticConventions.get_otel_metric_name(metric.name)
         
