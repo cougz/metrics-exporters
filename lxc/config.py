@@ -2,11 +2,11 @@
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Literal
-from pydantic import BaseSettings, Field, validator
-from pydantic_settings import BaseSettings as PydanticBaseSettings
+from pydantic import Field, validator
+from pydantic_settings import BaseSettings
 
 
-class Config(PydanticBaseSettings):
+class Config(BaseSettings):
     """Configuration class with Pydantic validation and environment-based settings"""
     
     # Core settings

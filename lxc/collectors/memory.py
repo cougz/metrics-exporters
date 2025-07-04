@@ -1,4 +1,6 @@
 """Memory metrics collector"""
+import socket
+from utils.container import extract_container_id
 import os
 from typing import List
 from .base import BaseCollector
@@ -82,28 +84,28 @@ class MemoryCollector(BaseCollector):
             MetricValue(
                 name="node_memory_usage_bytes",
                 value=used_mem,
-                labels={},
+                labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
                 help_text="Memory currently in use in bytes",
                 metric_type=MetricType.GAUGE
             ),
             MetricValue(
                 name="node_memory_free_bytes",
                 value=free_mem,
-                labels={},
+                labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
                 help_text="Amount of free memory in bytes",
                 metric_type=MetricType.GAUGE
             ),
             MetricValue(
                 name="node_memory_available_bytes",
                 value=available_mem,
-                labels={},
+                labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
                 help_text="Memory available for allocation in bytes",
                 metric_type=MetricType.GAUGE
             ),
             MetricValue(
                 name="node_memory_total_bytes",
                 value=total_mem,
-                labels={},
+                labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
                 help_text="Total memory in bytes",
                 metric_type=MetricType.GAUGE
             )

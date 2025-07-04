@@ -1,4 +1,6 @@
 """Process metrics collector"""
+import socket
+from utils.container import extract_container_id
 import subprocess
 from typing import List
 from .base import BaseCollector
@@ -25,7 +27,7 @@ class ProcessCollector(BaseCollector):
                     MetricValue(
                         name="node_processes_total",
                         value=process_count,
-                        labels={},
+                        labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
                         help_text="Number of processes",
                         metric_type=MetricType.GAUGE
                     )

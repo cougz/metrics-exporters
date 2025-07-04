@@ -1,4 +1,6 @@
 """Disk metrics collector"""
+import socket
+from utils.container import extract_container_id
 import subprocess
 from typing import List
 from .base import BaseCollector
@@ -38,6 +40,8 @@ class DiskCollector(BaseCollector):
                         
                         # Format labels
                         disk_labels = {
+                            "host_name": socket.gethostname(),
+                            "container_id": extract_container_id() or "unknown",
                             "device": filesystem,
                             "mountpoint": mountpoint,
                             "fstype": fstype

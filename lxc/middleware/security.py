@@ -2,7 +2,7 @@
 import time
 from typing import List, Optional
 from fastapi import Request, Response, HTTPException
-from fastapi.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.base import RequestResponseEndpoint
 from logging_config import get_logger
 
@@ -52,7 +52,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
         
         # Remove server version information
-        response.headers.pop("server", None)
+        if "server" in response.headers: del response.headers["server"]
         
         return response
 
@@ -176,7 +176,7 @@ class HealthCheckMiddleware(BaseHTTPMiddleware):
             # Add minimal security headers for health checks
             response = await call_next(request)
             response.headers["X-Content-Type-Options"] = "nosniff"
-            response.headers.pop("server", None)
+            if "server" in response.headers: del response.headers["server"]
             return response
         
         return await call_next(request)

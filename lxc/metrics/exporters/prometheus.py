@@ -22,7 +22,9 @@ class PrometheusExporter:
         lines = []
         
         # Add header
-        lines.append("# OpenTelemetry metrics for LXC")
+        import socket
+        hostname = socket.gethostname()
+        lines.append(f"# Node metrics for {hostname}")
         lines.append(f"# Generated at {datetime.now().astimezone().isoformat()}")
         
         # Group metrics by name to avoid duplicate TYPE comments
@@ -34,6 +36,8 @@ class PrometheusExporter:
         
         # Output metrics
         for metric_name, metric_list in metrics_by_name.items():
+            # Add HELP comment (use the first metric's help text)
+            lines.append(f"# HELP {metric_name} {metric_list[0].help_text}")
             # Add TYPE comment (use the first metric's type)
             lines.append(f"# TYPE {metric_name} {metric_list[0].metric_type.value}")
             
