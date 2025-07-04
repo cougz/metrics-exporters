@@ -15,7 +15,7 @@ Environment=PYTHONPATH=/opt/metrics-exporters
 # Export format configuration (choose one):
 # For OTLP export (default):
 Environment=EXPORT_FORMAT=otlp
-Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
+Environment=OTEL_ENDPOINT=your-otel-collector:4317
 Environment=OTEL_SERVICE_NAME=metrics-exporter
 Environment=OTEL_SERVICE_VERSION=1.0.0
 Environment=OTEL_INSECURE=true
@@ -24,7 +24,7 @@ Environment=OTEL_INSECURE=true
 #Environment=EXPORT_FORMAT=prometheus
 
 # Collector configuration (optional):
-#Environment=ENABLED_COLLECTORS=memory,disk,process,cpu,network
+#Environment=ENABLED_COLLECTORS=memory,filesystem,process,cpu,network
 #Environment=CPU_COLLECTION_METHOD=auto
 #Environment=CPU_MEASUREMENT_INTERVAL=15.0
 #Environment=NETWORK_INTERFACES=eth0,ens3
