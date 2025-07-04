@@ -34,11 +34,15 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 ### 1. Installation
 
 ```bash
+# Clone the repository (if not already done)
+git clone https://github.com/cougz/metrics-exporters.git
+cd metrics-exporters/lxc
+
 # Create directory
 sudo mkdir -p /opt/lxc-metrics-exporter
 
-# Copy files
-sudo cp -r * /opt/lxc-metrics-exporter/
+# Copy files from lxc subdirectory
+sudo cp -r . /opt/lxc-metrics-exporter/
 
 # Create virtual environment
 sudo python3 -m venv /opt/lxc-metrics-exporter/venv
@@ -56,8 +60,8 @@ sudo chown -R otelcol:otelcol /opt/lxc-metrics-exporter
 ### 2. Service Configuration
 
 ```bash
-# Install systemd service
-sudo cp lxc-metrics-exporter.service /etc/systemd/system/
+# Install systemd service (already copied from lxc subdirectory)
+sudo cp /opt/lxc-metrics-exporter/lxc-metrics-exporter.service /etc/systemd/system/
 
 # Edit the service file to configure your OpenTelemetry endpoint (optional)
 sudo nano /etc/systemd/system/lxc-metrics-exporter.service
