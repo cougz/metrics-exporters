@@ -816,24 +816,37 @@ class HostStrategy(CollectionStrategy):
         for chip_name, chip_data in sensors_data.items():
             if isinstance(chip_data, dict):
                 for feature_name, feature_data in chip_data.items():
-                    if isinstance(feature_data, dict) and "temp" in feature_name.lower():
-                        temp_info = {
-                            "chip": chip_name,
-                            "feature": feature_name,
-                            "sensor_name": f"{chip_name}_{feature_name}"
-                        }
+                    if isinstance(feature_data, dict):
+                        # Look for temperature input data (temp*_input keys)
+                        temp_input_key = None
+                        temp_input_value = None
                         
-                        # Extract temperature values
+                        # Find the temperature input key and value
                         for key, value in feature_data.items():
-                            if isinstance(value, (int, float)):
-                                if "input" in key:
-                                    temp_info["temp_celsius"] = value
-                                elif "crit" in key:
-                                    temp_info["temp_crit_celsius"] = value
-                                elif "max" in key:
-                                    temp_info["temp_max_celsius"] = value
+                            if isinstance(value, (int, float)) and key.endswith("_input") and "temp" in key:
+                                temp_input_key = key
+                                temp_input_value = value
+                                break
                         
-                        if "temp_celsius" in temp_info:
+                        if temp_input_key and temp_input_value is not None:
+                            temp_info = {
+                                "chip": chip_name,
+                                "feature": feature_name,
+                                "sensor_name": f"{chip_name}_{feature_name}",
+                                "temp_celsius": temp_input_value
+                            }
+                            
+                            # Extract max and critical temperatures
+                            temp_prefix = temp_input_key.replace("_input", "")
+                            
+                            max_key = f"{temp_prefix}_max"
+                            if max_key in feature_data and isinstance(feature_data[max_key], (int, float)):
+                                temp_info["temp_max_celsius"] = feature_data[max_key]
+                            
+                            crit_key = f"{temp_prefix}_crit"
+                            if crit_key in feature_data and isinstance(feature_data[crit_key], (int, float)):
+                                temp_info["temp_crit_celsius"] = feature_data[crit_key]
+                            
                             temperatures.append(temp_info)
         
         return temperatures
