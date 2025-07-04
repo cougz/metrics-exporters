@@ -229,6 +229,11 @@ class EnvironmentAwareMetricsRegistry:
             try:
                 logger.debug("Collecting metrics", collector=name, event_type="collection_start")
                 metrics = collector.collect()
+                
+                # Add collector name to each metric for debugging
+                for metric in metrics:
+                    metric.collector_name = name
+                
                 all_metrics.extend(metrics)
                 logger.debug("Collected metrics", collector=name, metrics_count=len(metrics), event_type="collection_complete")
                 
@@ -268,6 +273,11 @@ class EnvironmentAwareMetricsRegistry:
         try:
             logger.debug("Starting async collection", collector=name, event_type="async_collection_start")
             metrics = await collector.collect_async()
+            
+            # Add collector name to each metric for debugging
+            for metric in metrics:
+                metric.collector_name = name
+            
             logger.debug("Completed async collection", collector=name, metrics_count=len(metrics), event_type="async_collection_complete")
             return metrics
         except Exception as e:

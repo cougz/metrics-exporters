@@ -28,6 +28,7 @@ class MetricValue:
     metric_type: MetricType = MetricType.GAUGE
     unit: str = "1"
     timestamp: Optional[float] = None
+    collector_name: Optional[str] = None  # For debugging which collector produced this metric
     
     def to_prometheus_line(self) -> str:
         """Convert to Prometheus exposition format"""

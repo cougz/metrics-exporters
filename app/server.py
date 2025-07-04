@@ -240,6 +240,58 @@ class MetricsServer:
             
             return debug_info
         
+        @self.app.get('/debug/metrics')
+        def debug_metrics():
+            """Debug endpoint showing metric structure sent to OTLP"""
+            try:
+                # Collect metrics to see what would be sent
+                metrics = self.registry.collect_all()
+                
+                # Group metrics by name
+                metric_groups = {}
+                for metric in metrics:
+                    if metric.name not in metric_groups:
+                        metric_groups[metric.name] = {
+                            "name": metric.name,
+                            "type": metric.metric_type.value,
+                            "help": metric.help_text,
+                            "unit": getattr(metric, 'unit', None),
+                            "label_keys": set(),
+                            "sample_count": 0,
+                            "collectors": set()
+                        }
+                    
+                    # Add label keys
+                    metric_groups[metric.name]["label_keys"].update(metric.labels.keys())
+                    metric_groups[metric.name]["sample_count"] += 1
+                    
+                    # Track which collector produced this metric
+                    if hasattr(metric, 'collector_name'):
+                        metric_groups[metric.name]["collectors"].add(metric.collector_name)
+                
+                # Convert sets to lists for JSON serialization
+                for group in metric_groups.values():
+                    group["label_keys"] = sorted(list(group["label_keys"]))
+                    group["collectors"] = sorted(list(group["collectors"]))
+                
+                # Get export format info
+                export_info = {
+                    "format": self.config.export_format.value,
+                    "otlp_endpoint": self.config.otel_endpoint if self.config.is_otlp_format() else None,
+                    "prometheus_file": str(self.config.prometheus_file) if self.config.is_prometheus_format() else None
+                }
+                
+                return {
+                    "export_info": export_info,
+                    "metric_count": len(metrics),
+                    "unique_metrics": len(metric_groups),
+                    "metrics": sorted(metric_groups.values(), key=lambda x: x["name"]),
+                    "collection_timestamp": time.time()
+                }
+            except Exception as e:
+                logger.error(f"Error in debug metrics endpoint: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @self.app.get('/debug/sensors')
         def debug_sensors():
             """Debug sensor collection specifically"""
@@ -453,6 +505,7 @@ class MetricsServer:
                 <div class="endpoint"><a href="/debug/detection">/debug/detection</a> - Hardware detection debug</div>
                 <div class="endpoint"><a href="/debug/collectors">/debug/collectors</a> - Collector data testing</div>
                 <div class="endpoint"><a href="/debug/sensors">/debug/sensors</a> - Sensor collection testing</div>
+                <div class="endpoint"><a href="/debug/metrics">/debug/metrics</a> - OTLP metrics structure debug</div>
                 
                 {env_section}
                 
