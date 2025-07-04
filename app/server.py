@@ -242,55 +242,169 @@ class MetricsServer:
         
         @self.app.get('/debug/metrics')
         def debug_metrics():
-            """Debug endpoint showing metric structure sent to OTLP"""
+            """Debug endpoint showing metric structure (raw and transformed)"""
             try:
-                # Collect metrics to see what would be sent
-                metrics = self.registry.collect_all()
+                # Collect raw metrics
+                raw_metrics = self.registry.collect_all()
                 
-                # Group metrics by name
-                metric_groups = {}
-                for metric in metrics:
-                    if metric.name not in metric_groups:
-                        metric_groups[metric.name] = {
-                            "name": metric.name,
-                            "type": metric.metric_type.value,
-                            "help": metric.help_text,
-                            "unit": getattr(metric, 'unit', None),
-                            "label_keys": set(),
-                            "sample_count": 0,
-                            "collectors": set()
-                        }
-                    
-                    # Add label keys
-                    metric_groups[metric.name]["label_keys"].update(metric.labels.keys())
-                    metric_groups[metric.name]["sample_count"] += 1
-                    
-                    # Track which collector produced this metric
-                    if hasattr(metric, 'collector_name'):
-                        metric_groups[metric.name]["collectors"].add(metric.collector_name)
+                # Apply transformation if OpenTelemetry conventions are enabled
+                transformed_metrics = raw_metrics
+                transformation_applied = False
                 
-                # Convert sets to lists for JSON serialization
-                for group in metric_groups.values():
-                    group["label_keys"] = sorted(list(group["label_keys"]))
-                    group["collectors"] = sorted(list(group["collectors"]))
+                if self.config.use_otel_semconv:
+                    from metrics.transformer import MetricTransformer
+                    transformer = MetricTransformer(self.config)
+                    transformed_metrics = transformer.transform_metrics(raw_metrics)
+                    enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
+                    transformed_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+                    transformation_applied = True
+                
+                def group_metrics(metrics_list):
+                    """Group metrics by name for analysis"""
+                    metric_groups = {}
+                    for metric in metrics_list:
+                        if metric.name not in metric_groups:
+                            metric_groups[metric.name] = {
+                                "name": metric.name,
+                                "type": metric.metric_type.value,
+                                "help": metric.help_text,
+                                "unit": getattr(metric, 'unit', None),
+                                "label_keys": set(),
+                                "sample_count": 0,
+                                "collectors": set(),
+                                "sample_values": []
+                            }
+                        
+                        # Add label keys
+                        metric_groups[metric.name]["label_keys"].update(metric.labels.keys())
+                        metric_groups[metric.name]["sample_count"] += 1
+                        
+                        # Add sample values (first few)
+                        if len(metric_groups[metric.name]["sample_values"]) < 3:
+                            metric_groups[metric.name]["sample_values"].append({
+                                "value": metric.value,
+                                "labels": dict(metric.labels)
+                            })
+                        
+                        # Track which collector produced this metric
+                        if hasattr(metric, 'collector_name'):
+                            metric_groups[metric.name]["collectors"].add(metric.collector_name)
+                    
+                    # Convert sets to lists for JSON serialization
+                    for group in metric_groups.values():
+                        group["label_keys"] = sorted(list(group["label_keys"]))
+                        group["collectors"] = sorted(list(group["collectors"]))
+                    
+                    return metric_groups
+                
+                # Group both raw and transformed metrics
+                raw_groups = group_metrics(raw_metrics)
+                transformed_groups = group_metrics(transformed_metrics)
                 
                 # Get export format info
                 export_info = {
                     "format": self.config.export_format.value,
+                    "use_otel_semconv": self.config.use_otel_semconv,
+                    "transformation_applied": transformation_applied,
                     "otlp_endpoint": self.config.otel_endpoint if self.config.is_otlp_format() else None,
                     "prometheus_file": str(self.config.prometheus_file) if self.config.is_prometheus_format() else None
                 }
                 
-                return {
+                result = {
                     "export_info": export_info,
-                    "metric_count": len(metrics),
-                    "unique_metrics": len(metric_groups),
-                    "metrics": sorted(metric_groups.values(), key=lambda x: x["name"]),
                     "collection_timestamp": time.time()
                 }
+                
+                if transformation_applied:
+                    # Show both raw and transformed when transformation is applied
+                    result.update({
+                        "raw_metrics": {
+                            "count": len(raw_metrics),
+                            "unique_metrics": len(raw_groups),
+                            "metrics": sorted(raw_groups.values(), key=lambda x: x["name"])
+                        },
+                        "transformed_metrics": {
+                            "count": len(transformed_metrics),
+                            "unique_metrics": len(transformed_groups),
+                            "metrics": sorted(transformed_groups.values(), key=lambda x: x["name"])
+                        },
+                        "transformation_summary": {
+                            "metrics_before": len(raw_metrics),
+                            "metrics_after": len(transformed_metrics),
+                            "reduction_count": len(raw_metrics) - len(transformed_metrics),
+                            "reduction_percentage": round((len(raw_metrics) - len(transformed_metrics)) / len(raw_metrics) * 100, 1) if raw_metrics else 0,
+                            "new_calculated_metrics": [m["name"] for m in transformed_groups.values() if m["name"].endswith(".utilization")]
+                        }
+                    })
+                else:
+                    # Show only raw metrics when no transformation
+                    result.update({
+                        "metrics": {
+                            "count": len(raw_metrics),
+                            "unique_metrics": len(raw_groups),
+                            "metrics": sorted(raw_groups.values(), key=lambda x: x["name"])
+                        }
+                    })
+                
+                return result
+                
             except Exception as e:
                 logger.error(f"Error in debug metrics endpoint: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get('/debug/metrics/otel')
+        def debug_otel_metrics():
+            """Debug endpoint showing OpenTelemetry transformed metrics in Prometheus format"""
+            if not self.config.use_otel_semconv:
+                return Response("# OpenTelemetry semantic conventions not enabled\n# Set use_otel_semconv=true to enable\n", media_type='text/plain')
+            
+            try:
+                # Collect and transform metrics
+                raw_metrics = self.registry.collect_all()
+                from metrics.transformer import MetricTransformer
+                transformer = MetricTransformer(self.config)
+                
+                transformed_metrics = transformer.transform_metrics(raw_metrics)
+                enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
+                final_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+                
+                # Convert to Prometheus format
+                lines = []
+                lines.append("# OpenTelemetry Semantic Conventions Preview")
+                lines.append(f"# Transformed {len(raw_metrics)} raw metrics into {len(final_metrics)} semantic metrics")
+                lines.append(f"# Collection time: {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())}")
+                lines.append("")
+                
+                # Group by metric name for better organization
+                metric_groups = {}
+                for metric in final_metrics:
+                    if metric.name not in metric_groups:
+                        metric_groups[metric.name] = []
+                    metric_groups[metric.name].append(metric)
+                
+                # Generate Prometheus format output
+                for metric_name in sorted(metric_groups.keys()):
+                    metrics_in_group = metric_groups[metric_name]
+                    
+                    # Add TYPE and HELP comments
+                    first_metric = metrics_in_group[0]
+                    lines.append(f"# TYPE {metric_name} {first_metric.metric_type.value}")
+                    lines.append(f"# HELP {metric_name} {first_metric.help_text}")
+                    if hasattr(first_metric, 'unit') and first_metric.unit:
+                        lines.append(f"# UNIT {metric_name} {first_metric.unit}")
+                    
+                    # Add metric values
+                    for metric in metrics_in_group:
+                        lines.append(metric.to_prometheus_line())
+                    
+                    lines.append("")  # Empty line between metric groups
+                
+                return Response('\n'.join(lines), media_type='text/plain')
+                
+            except Exception as e:
+                logger.error(f"Error in debug OTel metrics endpoint: {e}")
+                error_content = f"# Error generating OpenTelemetry metrics preview: {str(e)}\n"
+                return Response(error_content, media_type='text/plain')
         
         @self.app.get('/debug/sensors')
         def debug_sensors():
@@ -505,7 +619,8 @@ class MetricsServer:
                 <div class="endpoint"><a href="/debug/detection">/debug/detection</a> - Hardware detection debug</div>
                 <div class="endpoint"><a href="/debug/collectors">/debug/collectors</a> - Collector data testing</div>
                 <div class="endpoint"><a href="/debug/sensors">/debug/sensors</a> - Sensor collection testing</div>
-                <div class="endpoint"><a href="/debug/metrics">/debug/metrics</a> - OTLP metrics structure debug</div>
+                <div class="endpoint"><a href="/debug/metrics">/debug/metrics</a> - Metrics structure debug (raw + transformed)</div>
+                <div class="endpoint"><a href="/debug/metrics/otel">/debug/metrics/otel</a> - OpenTelemetry transformed metrics preview</div>
                 
                 {env_section}
                 

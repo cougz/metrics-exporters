@@ -10,6 +10,7 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from ..models import MetricValue, MetricType
 from .batch_exporter import BatchExporter
+from ..transformer import MetricTransformer
 from logging_config import get_logger
 
 
@@ -38,16 +39,19 @@ class OpenTelemetryExporter:
         self.meter = None
         self.instruments = {}
         self._batch_exporter = None
+        self.transformer = MetricTransformer(config)
         
-        if config and config.otel_enabled:
+        if config and hasattr(config, 'otel_endpoint') and config.otel_endpoint:
             self._setup_otel()
             self._setup_batch_exporter()
     
     def _setup_otel(self):
         """Setup OpenTelemetry SDK"""
         try:
-            # Create resource
-            resource = Resource.create(self.config.get_otel_resource_attributes())
+            # Create resource with enhanced attributes
+            resource_attrs = self.config.get_otel_resource_attributes()
+            resource_attrs.update(self.transformer.get_resource_attributes())
+            resource = Resource.create(resource_attrs)
             
             # Determine if using HTTP or gRPC based on endpoint
             endpoint = self.config.otel_endpoint
@@ -114,34 +118,37 @@ class OpenTelemetryExporter:
         
         if instrument_key not in self.instruments:
             try:
+                # Use the metric's unit if available, otherwise default to "1"
+                unit = getattr(metric, 'unit', '1') or '1'
+                
                 if metric.metric_type == MetricType.COUNTER:
                     instrument = self.meter.create_counter(
                         name=metric.name,
                         description=metric.help_text,
-                        unit="1"
+                        unit=unit
                     )
                 elif metric.metric_type == MetricType.GAUGE:
                     instrument = self.meter.create_gauge(
                         name=metric.name,
                         description=metric.help_text,
-                        unit="1"
+                        unit=unit
                     )
                 elif metric.metric_type == MetricType.HISTOGRAM:
                     instrument = self.meter.create_histogram(
                         name=metric.name,
                         description=metric.help_text,
-                        unit="1"
+                        unit=unit
                     )
                 else:
                     # Default to gauge for unsupported types
                     instrument = self.meter.create_gauge(
                         name=metric.name,
                         description=metric.help_text,
-                        unit="1"
+                        unit=unit
                     )
                 
                 self.instruments[instrument_key] = instrument
-                logger.debug(f"Created OTel instrument: {metric.name} ({metric.metric_type.value})")
+                logger.debug(f"Created OTel instrument: {metric.name} ({metric.metric_type.value}) unit={unit}")
                 
             except Exception as e:
                 logger.error(f"Failed to create instrument for {metric.name}: {e}")
@@ -154,15 +161,24 @@ class OpenTelemetryExporter:
         if not self.is_enabled():
             return
         
+        # Transform metrics to OpenTelemetry format
+        transformed_metrics = self.transformer.transform_metrics(metrics)
+        
+        # Add calculated metrics
+        enhanced_metrics = self.transformer.add_calculated_metrics(transformed_metrics)
+        
+        # Remove redundant metrics
+        final_metrics = self.transformer.remove_redundant_metrics(enhanced_metrics)
+        
         if self._batch_exporter:
-            await self._batch_exporter.export_metrics(metrics)
+            await self._batch_exporter.export_metrics(final_metrics)
         else:
             # Fallback to synchronous export
-            self._export_metrics_sync(metrics)
+            self._export_metrics_sync(final_metrics)
     
     def _export_metrics_sync(self, metrics: List[MetricValue]):
         """Synchronous metrics export (used by batch exporter)"""
-        if not self.meter or not self.config.otel_enabled:
+        if not self.meter or not (hasattr(self.config, 'otel_endpoint') and self.config.otel_endpoint):
             return
         
         try:

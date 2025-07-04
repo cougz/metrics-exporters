@@ -74,6 +74,9 @@ class Config(BaseSettings):
     otel_max_queue_size: int = Field(default=1000, ge=1, description="OpenTelemetry max queue size")
     otel_worker_threads: int = Field(default=2, ge=1, description="OpenTelemetry worker threads")
     
+    # OpenTelemetry semantic conventions
+    use_otel_semconv: bool = Field(default=True, description="Use OpenTelemetry semantic conventions for metric naming")
+    
     class Config:
         env_prefix = ""
         case_sensitive = False
