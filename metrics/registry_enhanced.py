@@ -83,6 +83,11 @@ class EnvironmentAwareMetricsRegistry:
                 # Use auto-detected collectors (config is at defaults or empty)
                 enabled_collectors = auto_detected_collectors
                 logger.info(f"Using auto-detected collectors (config at defaults): {enabled_collectors}")
+                
+                # Update config to reflect the auto-detected collectors so is_collector_enabled works correctly
+                if hasattr(self.config, 'enabled_collectors'):
+                    self.config.enabled_collectors = enabled_collectors
+                    logger.debug(f"Updated config.enabled_collectors to: {enabled_collectors}")
             
             logger.info(f"Auto-detected collectors: {auto_detected_collectors}")
             logger.info(f"Enabled collectors: {enabled_collectors}")
