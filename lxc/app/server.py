@@ -247,7 +247,35 @@ class MetricsServer:
     
     def _generate_html_interface(self) -> str:
         """Generate HTML interface"""
-        collectors_status = self.registry.get_collector_status()
+        status_data = self.registry.get_collector_status()
+        
+        # Handle both enhanced and legacy registry formats
+        if isinstance(status_data, dict) and "environment" in status_data:
+            # Enhanced registry format
+            environment_info = status_data.get("environment", {})
+            collectors_status = status_data.get("collectors", {})
+            if isinstance(collectors_status, dict) and "collectors" in collectors_status:
+                collectors_status = collectors_status.get("collectors", {})
+        else:
+            # Legacy format
+            collectors_status = status_data
+            environment_info = None
+        
+        # Generate environment section if available
+        env_section = ""
+        if environment_info:
+            env_section = f"""
+                <h2>Runtime Environment:</h2>
+                <div class="section">
+                    <ul>
+                        <li><strong>Environment Type:</strong> <span class="status-enabled">{environment_info.get('type', 'unknown').upper()}</span></li>
+                        <li><strong>Detection Confidence:</strong> {environment_info.get('detection_confidence', 0):.1%}</li>
+                        <li><strong>Multi-Container Support:</strong> <span class="{'status-enabled' if environment_info.get('supports_multi_container', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_multi_container', False) else 'No'}</span></li>
+                        <li><strong>Hardware Access:</strong> <span class="{'status-enabled' if environment_info.get('supports_hardware_access', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_hardware_access', False) else 'No'}</span></li>
+                        <li><strong>Proxmox Features:</strong> <span class="{'status-enabled' if environment_info.get('supports_proxmox_features', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_proxmox_features', False) else 'No'}</span></li>
+                    </ul>
+                </div>
+            """
         
         return f"""
         <!DOCTYPE html>
@@ -269,7 +297,7 @@ class MetricsServer:
             <div class="container">
                 <div class="header">
                     <h1>LXC Metrics Exporter</h1>
-                    <p>FastAPI based metrics exporter for LXC containers</p>
+                    <p>Platform-agnostic metrics exporter with environment-aware collection</p>
                 </div>
                 
                 <h2>Available Endpoints:</h2>
@@ -277,6 +305,8 @@ class MetricsServer:
                 <div class="endpoint"><a href="/health">/health</a> - Health check</div>
                 <div class="endpoint"><a href="/status">/status</a> - Status information</div>
                 <div class="endpoint"><a href="/collectors">/collectors</a> - Collector information</div>
+                
+                {env_section}
                 
                 <h2>Configuration:</h2>
                 <div class="section">
