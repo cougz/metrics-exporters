@@ -28,6 +28,10 @@ class Config(BaseSettings):
     otel_service_name: str = Field(default="lxc-metrics-exporter", description="OpenTelemetry service name")
     otel_service_version: str = Field(default="1.0.0", description="OpenTelemetry service version")
     
+    # Environment detection settings
+    force_environment: Optional[str] = Field(default=None, description="Force specific environment type (lxc_container, proxmox_host, generic_host)")
+    auto_detect_environment: bool = Field(default=True, description="Automatically detect runtime environment")
+    
     # Collector settings
     enabled_collectors: List[str] = Field(default=["memory", "disk", "process", "cpu", "network"], description="List of enabled collectors")
     

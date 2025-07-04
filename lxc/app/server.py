@@ -6,7 +6,7 @@ from typing import Dict, Any
 from fastapi import FastAPI, Response, HTTPException
 from fastapi.responses import HTMLResponse
 from config import Config
-from metrics.registry import MetricsRegistry
+from metrics.registry_enhanced import EnvironmentAwareMetricsRegistry
 from metrics.exporters.base import ExporterFactory
 from logging_config import get_logger, log_metrics_collection, log_error
 from middleware.security import (
@@ -32,7 +32,7 @@ class MetricsServer:
             redoc_url=None,  # Disable redoc for security
             openapi_url=None  # Disable OpenAPI schema for security
         )
-        self.registry = MetricsRegistry(config)
+        self.registry = EnvironmentAwareMetricsRegistry(config)
         
         # Initialize single exporter based on format
         self.exporter = ExporterFactory.create_exporter(config)
