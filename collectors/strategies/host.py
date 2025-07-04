@@ -704,12 +704,12 @@ class HostStrategy(CollectionStrategy):
             
             # Collect CPU and system temperatures using sensors command
             cpu_temps = self._collect_cpu_temperatures()
-            logger.debug(f"CPU temperatures collected: {len(cpu_temps) if cpu_temps else 0} sensors")
+            logger.info(f"CPU temperatures collected: {len(cpu_temps) if cpu_temps else 0} sensors")
             if cpu_temps:
                 data["cpu_temperatures"] = cpu_temps
                 logger.debug(f"First temperature sensor: {cpu_temps[0] if cpu_temps else 'None'}")
             else:
-                logger.warning("No CPU temperature sensors found")
+                logger.info("No CPU temperature sensors found")
             
             # Collect additional thermal sensors (fans, voltage, etc.)
             thermal_sensors = self._collect_thermal_sensors()
@@ -761,7 +761,7 @@ class HostStrategy(CollectionStrategy):
                 logger.debug("sensors command not available")
                 return None
             
-            logger.debug("sensors command found, attempting to collect temperature data")
+            logger.info("sensors command found, attempting to collect temperature data")
             
             # Run sensors command to get temperature data
             result = subprocess.run(
@@ -771,10 +771,10 @@ class HostStrategy(CollectionStrategy):
                 timeout=15
             )
             
-            logger.debug(f"sensors -A -j result: returncode={result.returncode}, stdout_len={len(result.stdout)}, stderr={result.stderr}")
+            logger.info(f"sensors -A -j result: returncode={result.returncode}, stdout_len={len(result.stdout)}, stderr={result.stderr}")
             
             if result.returncode != 0:
-                logger.debug("JSON sensors failed, trying text output")
+                logger.info("JSON sensors failed, trying text output")
                 # Try without JSON output
                 result = subprocess.run(
                     ["sensors", "-A"],
@@ -782,11 +782,11 @@ class HostStrategy(CollectionStrategy):
                     text=True,
                     timeout=15
                 )
-                logger.debug(f"sensors -A result: returncode={result.returncode}, stdout_len={len(result.stdout)}")
+                logger.info(f"sensors -A result: returncode={result.returncode}, stdout_len={len(result.stdout)}")
                 if result.returncode == 0:
-                    logger.debug("Calling text parser")
+                    logger.info("Calling text parser")
                     parsed_result = self._parse_sensors_text_output(result.stdout)
-                    logger.debug(f"Text parser returned: {len(parsed_result) if parsed_result else 0} sensors")
+                    logger.info(f"Text parser returned: {len(parsed_result) if parsed_result else 0} sensors")
                     return parsed_result
                 return None
             
@@ -794,9 +794,9 @@ class HostStrategy(CollectionStrategy):
             try:
                 import json
                 sensors_data = json.loads(result.stdout)
-                logger.debug("Calling JSON parser")
+                logger.info("Calling JSON parser")
                 parsed_result = self._parse_sensors_json_output(sensors_data)
-                logger.debug(f"JSON parser returned: {len(parsed_result) if parsed_result else 0} sensors")
+                logger.info(f"JSON parser returned: {len(parsed_result) if parsed_result else 0} sensors")
                 return parsed_result
             except json.JSONDecodeError:
                 # Fallback to text parsing
