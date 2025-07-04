@@ -27,7 +27,7 @@ class ProcessCollector(BaseCollector):
                     MetricValue(
                         name="node_processes_total",
                         value=process_count,
-                        labels={"host_name": socket.gethostname(), "container_id": extract_container_id() or "unknown"},
+                        labels=self.get_standard_labels(),
                         help_text="Number of processes",
                         metric_type=MetricType.GAUGE
                     )

@@ -37,6 +37,10 @@ class Config(BaseSettings):
     service_name: str = Field(default="lxc-metrics-exporter", description="Service name")
     service_version: str = Field(default="1.0.0", description="Service version")
     
+    # Instance identification
+    instance_id: Optional[str] = Field(default=None, description="Instance ID (auto-generated if not specified)")
+    service_instance_id: Optional[str] = Field(default=None, description="Service instance ID (auto-generated if not specified)")
+    
     # Security settings
     trusted_hosts: List[str] = Field(default_factory=list, description="List of trusted hosts")
     rate_limit_requests: int = Field(default=100, ge=1, description="Max requests per window")
@@ -98,10 +102,29 @@ class Config(BaseSettings):
         """Check if a specific collector is enabled"""
         return collector_name in self.enabled_collectors
     
+    def get_instance_id(self) -> str:
+        """Get or generate instance ID"""
+        if self.instance_id:
+            return self.instance_id
+        # Auto-generate based on hostname and container ID
+        import socket
+        from utils.container import extract_container_id
+        hostname = socket.gethostname()
+        container_id = extract_container_id() or "unknown"
+        return f"{hostname}:{container_id}"
+    
+    def get_service_instance_id(self) -> str:
+        """Get or generate service instance ID"""
+        if self.service_instance_id:
+            return self.service_instance_id
+        # Use the same as instance_id for consistency
+        return self.get_instance_id()
+    
     def get_otel_resource_attributes(self) -> Dict[str, str]:
         """Get OpenTelemetry resource attributes"""
         return {
             "service.name": self.otel_service_name,
             "service.version": self.otel_service_version,
-            "service.instance.id": os.uname().nodename,
+            "service.instance.id": self.get_service_instance_id(),
+            "instance": self.get_instance_id(),
         }

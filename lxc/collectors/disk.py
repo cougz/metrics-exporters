@@ -38,14 +38,12 @@ class DiskCollector(BaseCollector):
                         used_bytes = used_kb * 1024
                         avail_bytes = avail_kb * 1024
                         
-                        # Format labels
-                        disk_labels = {
-                            "host_name": socket.gethostname(),
-                            "container_id": extract_container_id() or "unknown",
+                        # Format labels with disk-specific info
+                        disk_labels = self.get_standard_labels({
                             "device": filesystem,
                             "mountpoint": mountpoint,
                             "fstype": fstype
-                        }
+                        })
                         
                         # Create metrics following Prometheus best practices
                         metrics.extend([
@@ -54,21 +52,24 @@ class DiskCollector(BaseCollector):
                                 value=used_bytes,
                                 labels=disk_labels,
                                 help_text="Filesystem space used in bytes",
-                                metric_type=MetricType.GAUGE
+                                metric_type=MetricType.GAUGE,
+                                unit="bytes"
                             ),
                             MetricValue(
                                 name="node_filesystem_avail_bytes",
                                 value=avail_bytes,
                                 labels=disk_labels,
                                 help_text="Filesystem space available to non-root users in bytes",
-                                metric_type=MetricType.GAUGE
+                                metric_type=MetricType.GAUGE,
+                                unit="bytes"
                             ),
                             MetricValue(
                                 name="node_filesystem_size_bytes",
                                 value=size_bytes,
                                 labels=disk_labels,
                                 help_text="Filesystem size in bytes",
-                                metric_type=MetricType.GAUGE
+                                metric_type=MetricType.GAUGE,
+                                unit="bytes"
                             )
                         ])
         except (subprocess.TimeoutExpired, subprocess.CalledProcessError, ValueError, IndexError):

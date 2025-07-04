@@ -20,6 +20,7 @@ class MetricValue:
     labels: Dict[str, str]
     help_text: str
     metric_type: MetricType = MetricType.GAUGE
+    unit: str = "1"
     timestamp: Optional[float] = None
     
     def to_prometheus_line(self) -> str:

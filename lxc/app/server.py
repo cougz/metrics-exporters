@@ -8,7 +8,7 @@ from fastapi.responses import HTMLResponse
 from config import Config
 from metrics.registry import MetricsRegistry
 from metrics.exporters.prometheus import PrometheusExporter
-from metrics.exporters.opentelemetry import OpenTelemetryExporter
+from metrics.exporters.transparent_otlp import TransparentOTLPExporter
 from logging_config import get_logger, log_metrics_collection, log_error
 from middleware.security import (
     SecurityHeadersMiddleware,
@@ -37,7 +37,7 @@ class MetricsServer:
         
         # Initialize exporters
         self.prometheus_exporter = PrometheusExporter(config) if config.prometheus_enabled else None
-        self.otel_exporter = OpenTelemetryExporter(config) if config.otel_enabled else None
+        self.otel_exporter = TransparentOTLPExporter(config) if config.otel_enabled else None
         
         # Collection state
         self.last_collection_time = 0

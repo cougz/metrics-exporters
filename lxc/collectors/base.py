@@ -1,9 +1,11 @@
 """Base collector class and interfaces"""
 import asyncio
+import socket
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Dict
 from concurrent.futures import ThreadPoolExecutor
 from metrics.models import MetricValue
+from utils.container import extract_container_id
 
 
 class BaseCollector(ABC):
@@ -50,6 +52,27 @@ class BaseCollector(ABC):
             return True
         except ValueError:
             return False
+    
+    def get_standard_labels(self, additional_labels: Dict[str, str] = None) -> Dict[str, str]:
+        """Get standard labels including instance information"""
+        hostname = socket.gethostname()
+        container_id = extract_container_id() or "unknown"
+        instance_id = f"{hostname}:{container_id}"
+        
+        # If config is available and has get_instance_id method, use it
+        if hasattr(self.config, 'get_instance_id'):
+            instance_id = self.config.get_instance_id()
+        
+        labels = {
+            "host_name": hostname,
+            "container_id": container_id,
+            "instance": instance_id
+        }
+        
+        if additional_labels:
+            labels.update(additional_labels)
+            
+        return labels
     
     def cleanup(self):
         """Cleanup resources"""
