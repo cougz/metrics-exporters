@@ -19,6 +19,7 @@ Environment=OTEL_ENDPOINT=your-otel-collector:4317
 Environment=OTEL_SERVICE_NAME=metrics-exporter
 Environment=OTEL_SERVICE_VERSION=1.0.0
 Environment=OTEL_INSECURE=true
+Environment=USE_OTEL_SEMCONV=true
 
 # For Prometheus export (uncomment and configure):
 #Environment=EXPORT_FORMAT=prometheus
