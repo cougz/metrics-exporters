@@ -6,9 +6,9 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# OpenTelemetry semantic convention mappings
+# OpenTelemetry semantic convention mappings with standardized units
 SEMANTIC_MAPPINGS = {
-    # Memory mappings
+    # Memory mappings (bytes)
     "node_memory_total_bytes": ("system.memory.usage", {"state": "total"}),
     "node_memory_free_bytes": ("system.memory.usage", {"state": "free"}),
     "node_memory_usage_bytes": ("system.memory.usage", {"state": "used"}),
@@ -21,18 +21,18 @@ SEMANTIC_MAPPINGS = {
     "node_load5": ("system.cpu.load_average.5m", {}),
     "node_load15": ("system.cpu.load_average.15m", {}),
     
-    # Filesystem mappings
+    # Filesystem mappings (bytes)
     "node_filesystem_size_bytes": ("system.filesystem.usage", {"state": "total"}),
     "node_filesystem_usage_bytes": ("system.filesystem.usage", {"state": "used"}),
     "node_filesystem_avail_bytes": ("system.filesystem.usage", {"state": "available"}),
     
-    # Network mappings
+    # Network mappings (bytes for io, count for packets)
     "node_network_receive_bytes_total": ("system.network.io", {"direction": "receive"}),
     "node_network_transmit_bytes_total": ("system.network.io", {"direction": "transmit"}),
     "node_network_receive_packets_total": ("system.network.packets", {"direction": "receive"}),
     "node_network_transmit_packets_total": ("system.network.packets", {"direction": "transmit"}),
     
-    # Process mappings
+    # Process mappings (count)
     "node_processes_total": ("system.process.count", {"state": "total"}),
     "node_procs_running": ("system.process.count", {"state": "running"}),
     "node_procs_blocked": ("system.process.count", {"state": "blocked"}),
@@ -71,7 +71,7 @@ class MetricTransformer:
             if metric.name in SEMANTIC_MAPPINGS:
                 # Use explicit mapping
                 new_name, additional_labels = SEMANTIC_MAPPINGS[metric.name]
-                new_labels = metric.labels.copy()
+                new_labels = self._standardize_labels(metric.labels.copy())
                 new_labels.update(additional_labels)
                 
                 transformed_metric = MetricValue(
@@ -91,29 +91,103 @@ class MetricTransformer:
                 transformed_metric = MetricValue(
                     name=new_name,
                     value=metric.value,
-                    labels=metric.labels.copy(),
+                    labels=self._standardize_labels(metric.labels.copy()),
                     help_text=metric.help_text,
                     metric_type=metric.metric_type,
-                    unit=metric.unit,
+                    unit=self._get_semantic_unit(metric.name, metric.unit),
                     timestamp=metric.timestamp
                 )
                 transformed.append(transformed_metric)
             else:
-                # Keep as-is if already semantic
-                transformed.append(metric)
+                # Keep as-is if already semantic, but standardize labels
+                transformed_metric = MetricValue(
+                    name=metric.name,
+                    value=metric.value,
+                    labels=self._standardize_labels(metric.labels.copy()),
+                    help_text=metric.help_text,
+                    metric_type=metric.metric_type,
+                    unit=self._get_semantic_unit(metric.name, metric.unit),
+                    timestamp=metric.timestamp
+                )
+                transformed.append(transformed_metric)
         
         return transformed
     
-    def _get_semantic_unit(self, original_name: str) -> str:
-        """Get appropriate OpenTelemetry unit"""
+    def _standardize_labels(self, labels: Dict[str, str]) -> Dict[str, str]:
+        """Standardize label names to OpenTelemetry semantic conventions"""
+        standardized = {}
+        
+        for key, value in labels.items():
+            # Standardize label names
+            if key == "host_name":
+                standardized["host.name"] = value
+            elif key == "device":
+                # Context-aware device labeling
+                if self._is_network_device(value):
+                    standardized["network.interface.name"] = value
+                    # Add interface type detection
+                    if value == "lo":
+                        standardized["network.interface.type"] = "loopback"
+                    elif value.startswith(("eth", "eno", "ens")):
+                        standardized["network.interface.type"] = "ethernet"
+                    elif value.startswith(("wlan", "wifi")):
+                        standardized["network.interface.type"] = "wireless"
+                    elif value.startswith("docker"):
+                        standardized["network.interface.type"] = "bridge"
+                    else:
+                        standardized["network.interface.type"] = "other"
+                elif self._is_disk_device(value):
+                    standardized["disk.device"] = value
+                    # Add disk type detection
+                    if "nvme" in value.lower():
+                        standardized["disk.type"] = "ssd"
+                    elif value.lower().startswith(("sd", "hd")):
+                        standardized["disk.type"] = "unknown"  # Could be SSD or HDD
+                    else:
+                        standardized["disk.type"] = "other"
+                else:
+                    # Generic device
+                    standardized["device"] = value
+            elif key == "instance":
+                # Check if instance is redundant with host.name
+                host_name = labels.get("host_name") or standardized.get("host.name")
+                if not (host_name and host_name == value):
+                    # Keep instance if it's different from host name
+                    standardized["service.instance.id"] = value
+            else:
+                # Keep other labels as-is
+                standardized[key] = value
+        
+        return standardized
+    
+    def _is_network_device(self, device_name: str) -> bool:
+        """Check if device name represents a network interface"""
+        network_prefixes = ["eth", "eno", "ens", "enp", "wlan", "wifi", "lo", "docker", "br", "virbr", "veth", "tun", "tap"]
+        return any(device_name.startswith(prefix) for prefix in network_prefixes)
+    
+    def _is_disk_device(self, device_name: str) -> bool:
+        """Check if device name represents a disk device"""
+        disk_prefixes = ["sd", "hd", "nvme", "vd", "xvd", "mmcblk"]
+        return any(device_name.startswith(prefix) for prefix in disk_prefixes)
+    
+    def _get_semantic_unit(self, original_name: str, existing_unit: str = None) -> str:
+        """Get appropriate OpenTelemetry unit with standardized names"""
+        # If we already have a good unit, prefer it
+        if existing_unit and existing_unit not in ["By", "%"]:
+            return existing_unit
+            
         if "bytes" in original_name:
-            return "By"
-        elif "percent" in original_name:
-            return "1"
+            return "bytes"
+        elif "percent" in original_name or existing_unit == "%":
+            return "percent"
         elif "seconds" in original_name:
             return "s"
         elif "hertz" in original_name:
             return "Hz"
+        elif existing_unit == "By":
+            return "bytes"
+        elif existing_unit:
+            return existing_unit
         else:
             return "1"
     
@@ -127,7 +201,7 @@ class MetricTransformer:
             # Convert percentages to ratios (0-100 → 0-1)
             if (metric.name.endswith(".utilization") or 
                 "percent" in metric.name.lower() or
-                metric.unit == "%"):
+                metric.unit in ["%", "percent"]):
                 
                 new_value = metric.value / 100.0 if metric.value <= 100 else metric.value
                 new_metric = MetricValue(
