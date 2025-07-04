@@ -866,7 +866,8 @@ class HostStrategy(CollectionStrategy):
                             if crit_match:
                                 temp_info["temp_crit_celsius"] = float(crit_match.group(1))
                             
-                            max_match = re.search(r'max\s*=\s*([-+]?\d+\.?\d*)°C', temp_part)
+                            # Look for both "high" and "max" temperature thresholds
+                            max_match = re.search(r'(?:high|max)\s*=\s*([-+]?\d+\.?\d*)°C', temp_part)
                             if max_match:
                                 temp_info["temp_max_celsius"] = float(max_match.group(1))
                             
