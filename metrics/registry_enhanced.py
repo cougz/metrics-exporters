@@ -265,6 +265,21 @@ class EnvironmentAwareMetricsRegistry:
     
     def get_collector_status(self) -> Dict[str, Dict]:
         """Get status information for all collectors"""
+        # Get auto-detected collectors to show which ones are available
+        auto_detected_collectors = self._runtime_env.get_default_collectors()
+        
+        # Define all possible collectors
+        all_possible_collectors = {
+            'memory': 'Memory usage metrics with environment-aware collection',
+            'cpu': 'CPU usage metrics with environment-aware collection', 
+            'filesystem': 'Filesystem usage metrics with environment-aware collection',
+            'network': 'Network metrics with environment-aware collection',
+            'process': 'Process metrics with environment-aware collection',
+            'zfs': 'ZFS pool metrics (host environments only)',
+            'sensors_cpu': 'CPU temperature and thermal sensors (host environments only)',
+            'sensors_nvme': 'NVMe/disk temperature sensors (host environments only)'
+        }
+        
         status = {
             "environment": {
                 "type": self._runtime_env.environment_type.value,
@@ -275,13 +290,40 @@ class EnvironmentAwareMetricsRegistry:
             "collectors": {}
         }
         
+        # Add registered collectors
         for name, collector in self.collectors.items():
             status["collectors"][name] = {
                 "enabled": collector.is_enabled(),
+                "registered": True,
+                "auto_detected": name in auto_detected_collectors,
                 "class": collector.__class__.__name__,
                 "help": collector.help_text,
                 "strategy": getattr(collector.get_collection_strategy(), 'name', 'unknown') if hasattr(collector, 'get_collection_strategy') else 'legacy'
             }
+        
+        # Add auto-detected but not registered collectors
+        for name in auto_detected_collectors:
+            if name not in status["collectors"]:
+                status["collectors"][name] = {
+                    "enabled": False,
+                    "registered": False,
+                    "auto_detected": True,
+                    "class": "Not Registered",
+                    "help": all_possible_collectors.get(name, "Auto-detected collector"),
+                    "strategy": "N/A"
+                }
+        
+        # Add other possible collectors that weren't auto-detected
+        for name, description in all_possible_collectors.items():
+            if name not in status["collectors"]:
+                status["collectors"][name] = {
+                    "enabled": False,
+                    "registered": False,
+                    "auto_detected": False,
+                    "class": "Not Available",
+                    "help": description,
+                    "strategy": "N/A"
+                }
         
         return status
     

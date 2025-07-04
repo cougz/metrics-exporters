@@ -149,6 +149,37 @@ class MetricsServer:
                 "enabled_collectors": self.config.enabled_collectors
             }
         
+        @self.app.get('/debug/detection')
+        def debug_detection():
+            """Debug hardware detection"""
+            runtime_env = self.registry.get_runtime_environment()
+            
+            # Test hardware detection manually for debugging
+            debug_info = {
+                "environment_type": runtime_env.environment_type.value,
+                "is_host": runtime_env.is_host,
+                "is_container": runtime_env.is_container,
+                "hardware_detection": {}
+            }
+            
+            if runtime_env.is_host:
+                debug_info["hardware_detection"] = {
+                    "zfs": {
+                        "detected": runtime_env._has_zfs(),
+                        "test_results": runtime_env._debug_zfs_detection()
+                    },
+                    "cpu_sensors": {
+                        "detected": runtime_env._has_cpu_sensors(), 
+                        "test_results": runtime_env._debug_cpu_sensors_detection()
+                    },
+                    "nvme_sensors": {
+                        "detected": runtime_env._has_nvme_sensors(),
+                        "test_results": runtime_env._debug_nvme_sensors_detection()
+                    }
+                }
+            
+            return debug_info
+        
         @self.app.post('/collect')
         async def manual_collect():
             """Manually trigger metrics collection"""
@@ -319,8 +350,9 @@ class MetricsServer:
                 <h2>Collectors:</h2>
                 <div class="section">
                     <ul>
-                        {''.join([f'<li><strong>{name}:</strong> <span class="{"status-enabled" if info["enabled"] else "status-disabled"}">{"Enabled" if info["enabled"] else "Disabled"}</span> - {info["help"]}</li>' for name, info in collectors_status.items()])}
+                        {''.join([f'<li><strong>{name}:</strong> <span class="{"status-enabled" if info["enabled"] else "status-disabled"}">{"Enabled" if info["enabled"] else "Disabled"}</span> {"🔍" if info.get("auto_detected", False) else ""} {"📋" if info.get("registered", False) else "❌"} - {info["help"]}</li>' for name, info in sorted(collectors_status.items())])}
                     </ul>
+                    <p><small>🔍 = Auto-detected, 📋 = Registered, ❌ = Not available</small></p>
                 </div>
             </div>
         </body>

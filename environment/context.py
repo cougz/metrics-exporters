@@ -80,17 +80,23 @@ class RuntimeEnvironment:
             # Check for ZFS availability
             if self._has_zfs():
                 collectors.append("zfs")
-                logger.debug("ZFS detected, enabling zfs collector")
+                logger.info("ZFS detected, enabling zfs collector")
+            else:
+                logger.info("ZFS not detected, skipping zfs collector")
             
             # Check for CPU temperature sensors
             if self._has_cpu_sensors():
                 collectors.append("sensors_cpu")
-                logger.debug("CPU sensors detected, enabling sensors_cpu collector")
+                logger.info("CPU sensors detected, enabling sensors_cpu collector")
+            else:
+                logger.info("CPU sensors not detected, skipping sensors_cpu collector")
             
             # Check for NVMe/disk temperature capability
             if self._has_nvme_sensors():
                 collectors.append("sensors_nvme")
-                logger.debug("NVMe/disk sensors detected, enabling sensors_nvme collector")
+                logger.info("NVMe/disk sensors detected, enabling sensors_nvme collector")
+            else:
+                logger.info("NVMe/disk sensors not detected, skipping sensors_nvme collector")
         
         logger.info(f"Auto-detected collectors for {self.environment_type.value}: {collectors}")
         return collectors
@@ -205,6 +211,193 @@ class RuntimeEnvironment:
         except Exception as e:
             logger.debug(f"NVMe/disk sensors detection failed: {e}")
             return False
+    
+    def _debug_zfs_detection(self) -> dict:
+        """Debug ZFS detection with detailed results"""
+        debug_info = {"steps": [], "final_result": False}
+        
+        try:
+            import subprocess
+            
+            # Step 1: Check if zpool command exists
+            result = subprocess.run(
+                ["which", "zpool"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            debug_info["steps"].append({
+                "step": "zpool_command_check",
+                "command": "which zpool",
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip(),
+                "success": result.returncode == 0
+            })
+            
+            if result.returncode != 0:
+                debug_info["final_result"] = False
+                return debug_info
+            
+            # Step 2: Check if there are actual pools
+            result = subprocess.run(
+                ["zpool", "list"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            debug_info["steps"].append({
+                "step": "zpool_list_check", 
+                "command": "zpool list",
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip(),
+                "success": result.returncode == 0
+            })
+            
+            if result.returncode != 0:
+                debug_info["final_result"] = False
+                return debug_info
+            
+            # Step 3: Parse output
+            lines = result.stdout.strip().split('\n')
+            has_pools = len(lines) > 1 and not any('no pools available' in line.lower() for line in lines)
+            debug_info["steps"].append({
+                "step": "parse_pools",
+                "line_count": len(lines),
+                "lines": lines,
+                "has_pools": has_pools
+            })
+            
+            debug_info["final_result"] = has_pools
+            
+        except Exception as e:
+            debug_info["steps"].append({
+                "step": "exception",
+                "error": str(e)
+            })
+            debug_info["final_result"] = False
+        
+        return debug_info
+    
+    def _debug_cpu_sensors_detection(self) -> dict:
+        """Debug CPU sensors detection with detailed results"""
+        debug_info = {"steps": [], "final_result": False}
+        
+        try:
+            import subprocess
+            
+            # Step 1: Check if sensors command exists
+            result = subprocess.run(
+                ["which", "sensors"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            debug_info["steps"].append({
+                "step": "sensors_command_check",
+                "command": "which sensors",
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip(),
+                "success": result.returncode == 0
+            })
+            
+            if result.returncode != 0:
+                debug_info["final_result"] = False
+                return debug_info
+            
+            # Step 2: Test sensors output
+            result = subprocess.run(
+                ["sensors", "-A"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            debug_info["steps"].append({
+                "step": "sensors_output_check",
+                "command": "sensors -A",
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip()[:1000],  # Limit output size
+                "stderr": result.stderr.strip(),
+                "success": result.returncode == 0
+            })
+            
+            if result.returncode != 0:
+                debug_info["final_result"] = False
+                return debug_info
+            
+            # Step 3: Check for temperature data
+            has_temps = "°C" in result.stdout or "temp" in result.stdout.lower()
+            debug_info["steps"].append({
+                "step": "temperature_check",
+                "has_celsius": "°C" in result.stdout,
+                "has_temp_keyword": "temp" in result.stdout.lower(),
+                "has_temperatures": has_temps
+            })
+            
+            debug_info["final_result"] = has_temps
+            
+        except Exception as e:
+            debug_info["steps"].append({
+                "step": "exception",
+                "error": str(e)
+            })
+            debug_info["final_result"] = False
+        
+        return debug_info
+    
+    def _debug_nvme_sensors_detection(self) -> dict:
+        """Debug NVMe sensors detection with detailed results"""
+        debug_info = {"steps": [], "final_result": False}
+        
+        try:
+            import subprocess
+            from pathlib import Path
+            
+            # Step 1: Check if smartctl is available
+            result = subprocess.run(
+                ["which", "smartctl"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            debug_info["steps"].append({
+                "step": "smartctl_command_check",
+                "command": "which smartctl",
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip(),
+                "success": result.returncode == 0
+            })
+            
+            if result.returncode != 0:
+                debug_info["final_result"] = False
+                return debug_info
+            
+            # Step 2: Check for drives
+            dev_path = Path("/dev")
+            nvme_drives = list(dev_path.glob("nvme*n*"))
+            sata_drives = list(dev_path.glob("sd[a-z]"))
+            
+            debug_info["steps"].append({
+                "step": "drive_detection",
+                "nvme_drives": [str(d) for d in nvme_drives],
+                "sata_drives": [str(d) for d in sata_drives],
+                "total_drives": len(nvme_drives) + len(sata_drives)
+            })
+            
+            has_drives = bool(nvme_drives or sata_drives)
+            debug_info["final_result"] = has_drives
+            
+        except Exception as e:
+            debug_info["steps"].append({
+                "step": "exception", 
+                "error": str(e)
+            })
+            debug_info["final_result"] = False
+        
+        return debug_info
 
 
 class EnvironmentContext:
