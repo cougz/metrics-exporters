@@ -476,6 +476,118 @@ class MetricsServer:
                 log_error(logger, e, {"component": "manual_collection", "endpoint": "/collect"})
                 raise HTTPException(status_code=500, detail={"error": str(e)})
         
+        @self.app.get('/debug/otlp/connection')
+        async def debug_otlp_connection():
+            """Debug OTLP connection status"""
+            try:
+                if hasattr(self.exporter, 'test_connection'):
+                    connection_status = await self.exporter.test_connection()
+                else:
+                    connection_status = {"error": "Connection test not available"}
+                
+                return {
+                    "exporter_type": type(self.exporter).__name__,
+                    "endpoint": self.config.otel_endpoint,
+                    "service_name": self.config.service_name,
+                    "insecure": self.config.otel_insecure,
+                    "exporter_healthy": self.exporter.is_healthy(),
+                    "connection_status": connection_status,
+                    "last_export_logs": "Check /debug/logs for recent OTLP export logs"
+                }
+            except Exception as e:
+                logger.error(f"Error testing OTLP connection: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get('/debug/otlp')
+        def debug_otlp_export():
+            """Debug OTLP export - show exactly what would be sent"""
+            try:
+                # Collect raw metrics
+                raw_metrics = self.registry.collect_all()
+                
+                # Apply transformations if enabled
+                final_metrics = raw_metrics
+                if self.config.use_otel_semconv:
+                    from metrics.transformer import MetricTransformer
+                    transformer = MetricTransformer(self.config)
+                    transformed_metrics = transformer.transform_metrics(raw_metrics)
+                    enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
+                    final_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+                
+                # Simulate what the OTLP exporter would send
+                grouped_metrics = {}
+                for metric in final_metrics:
+                    if metric.name not in grouped_metrics:
+                        grouped_metrics[metric.name] = []
+                    grouped_metrics[metric.name].append({
+                        "value": metric.value,
+                        "labels": dict(metric.labels),
+                        "type": metric.metric_type.value,
+                        "unit": getattr(metric, 'unit', '1'),
+                        "help": metric.help_text,
+                        "timestamp": metric.timestamp
+                    })
+                
+                # Get resource attributes that would be sent
+                resource_attrs = self.config.get_otel_resource_attributes()
+                if self.config.use_otel_semconv:
+                    from metrics.transformer import MetricTransformer
+                    transformer = MetricTransformer(self.config)
+                    resource_attrs.update(transformer.get_resource_attributes())
+                
+                return {
+                    "otlp_endpoint": self.config.otel_endpoint,
+                    "service_name": self.config.service_name,
+                    "service_version": self.config.service_version,
+                    "transformation_enabled": self.config.use_otel_semconv,
+                    "raw_metric_count": len(raw_metrics),
+                    "final_metric_count": len(final_metrics),
+                    "grouped_metric_count": len(grouped_metrics),
+                    "resource_attributes": resource_attrs,
+                    "metrics_to_send": grouped_metrics,
+                    "sample_metric_names": list(grouped_metrics.keys())[:10],
+                    "exporter_healthy": self.exporter.is_healthy(),
+                    "timestamp": time.time()
+                }
+                
+            except Exception as e:
+                logger.error(f"Error in debug OTLP endpoint: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get('/debug/otlp/raw')
+        def debug_otlp_raw():
+            """Debug OTLP raw data structure that would be sent to endpoint"""
+            try:
+                return self._simulate_otlp_export()
+            except Exception as e:
+                logger.error(f"Error in debug OTLP raw endpoint: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get('/debug/config')
+        def debug_config():
+            """Show current configuration affecting metric naming and export"""
+            try:
+                return {
+                    "export_format": self.config.export_format.value,
+                    "use_otel_semconv": self.config.use_otel_semconv,
+                    "otel_endpoint": self.config.otel_endpoint,
+                    "otel_service_name": self.config.otel_service_name,
+                    "otel_service_version": self.config.otel_service_version,
+                    "enabled_collectors": self.config.enabled_collectors,
+                    "collection_interval": self.config.collection_interval,
+                    "environment": {
+                        "type": self.registry.get_runtime_environment().environment_type.value,
+                        "is_host": self.registry.get_runtime_environment().is_host,
+                        "is_container": self.registry.get_runtime_environment().is_container
+                    },
+                    "naming_strategy": "OpenTelemetry semantic conventions" if self.config.use_otel_semconv else "Prometheus node_exporter style",
+                    "expected_metric_prefix": "system." if self.config.use_otel_semconv else "node_",
+                    "timestamp": time.time()
+                }
+            except Exception as e:
+                logger.error(f"Error in debug config endpoint: {e}")
+                raise HTTPException(status_code=500, detail=str(e))
+        
         @self.app.get('/', response_class=HTMLResponse)
         def index():
             """Web interface"""
@@ -621,6 +733,8 @@ class MetricsServer:
                 <div class="endpoint"><a href="/debug/sensors">/debug/sensors</a> - Sensor collection testing</div>
                 <div class="endpoint"><a href="/debug/metrics">/debug/metrics</a> - Metrics structure debug (raw + transformed)</div>
                 <div class="endpoint"><a href="/debug/metrics/otel">/debug/metrics/otel</a> - OpenTelemetry transformed metrics preview</div>
+                <div class="endpoint"><a href="/debug/config">/debug/config</a> - Configuration and naming strategy</div>
+                <div class="endpoint"><a href="/debug/otlp/raw">/debug/otlp/raw</a> - Raw OTLP data structure</div>
                 
                 {env_section}
                 
@@ -645,6 +759,96 @@ class MetricsServer:
         </body>
         </html>
         """
+    
+    def _simulate_otlp_export(self) -> Dict[str, Any]:
+        """Simulate actual OTLP data structure that would be sent"""
+        try:
+            # Collect and transform metrics
+            raw_metrics = self.registry.collect_all()
+            final_metrics = raw_metrics
+            
+            if self.config.use_otel_semconv:
+                from metrics.transformer import MetricTransformer
+                transformer = MetricTransformer(self.config)
+                transformed_metrics = transformer.transform_metrics(raw_metrics)
+                enhanced_metrics = transformer.add_calculated_metrics(transformed_metrics)
+                final_metrics = transformer.remove_redundant_metrics(enhanced_metrics)
+            
+            # Get resource attributes
+            resource_attrs = self.config.get_otel_resource_attributes()
+            if self.config.use_otel_semconv:
+                from metrics.transformer import MetricTransformer
+                transformer = MetricTransformer(self.config)
+                resource_attrs.update(transformer.get_resource_attributes())
+            
+            # Simulate OTLP structure
+            current_time = int(time.time() * 1_000_000_000)  # nanoseconds
+            
+            # Group metrics by name and labels
+            metric_families = {}
+            for metric in final_metrics:
+                family_key = f"{metric.name}_{metric.metric_type.value}"
+                if family_key not in metric_families:
+                    metric_families[family_key] = {
+                        "name": metric.name,
+                        "description": metric.help_text,
+                        "unit": getattr(metric, 'unit', '1'),
+                        "type": metric.metric_type.value,
+                        "data_points": []
+                    }
+                
+                # Create data point
+                data_point = {
+                    "attributes": [
+                        {"key": k, "value": {"string_value": str(v)}}
+                        for k, v in metric.labels.items()
+                    ],
+                    "time_unix_nano": current_time,
+                    "value": metric.value
+                }
+                
+                metric_families[family_key]["data_points"].append(data_point)
+            
+            # Create OTLP structure
+            otlp_data = {
+                "resource_metrics": [
+                    {
+                        "resource": {
+                            "attributes": [
+                                {"key": k, "value": {"string_value": str(v)}}
+                                for k, v in resource_attrs.items()
+                            ]
+                        },
+                        "scope_metrics": [
+                            {
+                                "scope": {
+                                    "name": "metrics-exporter",
+                                    "version": self.config.service_version
+                                },
+                                "metrics": list(metric_families.values())
+                            }
+                        ]
+                    }
+                ]
+            }
+            
+            return {
+                "otlp_structure": otlp_data,
+                "summary": {
+                    "endpoint": self.config.otel_endpoint,
+                    "metric_families": len(metric_families),
+                    "total_data_points": sum(len(f["data_points"]) for f in metric_families.values()),
+                    "resource_attributes": len(resource_attrs),
+                    "timestamp": time.time()
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error simulating OTLP export: {e}")
+            return {
+                "error": str(e),
+                "error_type": type(e).__name__
+            }
     
     def get_app(self) -> FastAPI:
         """Get the FastAPI application"""

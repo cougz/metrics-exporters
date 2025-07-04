@@ -75,7 +75,7 @@ class Config(BaseSettings):
     otel_worker_threads: int = Field(default=2, ge=1, description="OpenTelemetry worker threads")
     
     # OpenTelemetry semantic conventions
-    use_otel_semconv: bool = Field(default=True, description="Use OpenTelemetry semantic conventions for metric naming")
+    use_otel_semconv: bool = Field(default=False, description="Use OpenTelemetry semantic conventions for metric naming")
     
     class Config:
         env_prefix = ""
@@ -133,7 +133,7 @@ class Config(BaseSettings):
     @validator('enabled_collectors')
     def validate_enabled_collectors(cls, v):
         """Validate that enabled collectors are known collectors"""
-        valid_collectors = {'memory', 'filesystem', 'process', 'cpu', 'network', 'sensors_cpu', 'sensors_nvme', 'zfs'}
+        valid_collectors = {'memory', 'filesystem', 'process', 'cpu', 'network', 'sensors_cpu', 'sensors_nvme', 'sensors', 'smart', 'zfs'}
         for collector in v:
             if collector not in valid_collectors:
                 raise ValueError(f"Unknown collector: {collector}. Valid collectors: {valid_collectors}")

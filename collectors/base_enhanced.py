@@ -119,6 +119,10 @@ class EnvironmentAwareCollector(ABC):
                 return strategy.collect_sensors_cpu()
             elif metric_type == "sensors_nvme":
                 return strategy.collect_sensors_nvme()
+            elif metric_type == "sensors":
+                return strategy.collect_sensors()
+            elif metric_type == "smart":
+                return strategy.collect_smart()
             else:
                 return strategy._create_not_supported_result(f"Unknown metric type: {metric_type}")
         

@@ -238,3 +238,11 @@ class FallbackStrategy(CollectionStrategy):
     def collect_sensors_nvme(self) -> StrategyResult:
         """NVMe sensors collection not available in fallback strategy"""
         return self._create_not_supported_result("NVMe sensors not available in fallback environment")
+    
+    def collect_sensors(self) -> StrategyResult:
+        """Sensors collection not available in fallback strategy"""
+        return self._create_not_supported_result("Hardware sensors not available in fallback environment")
+    
+    def collect_smart(self) -> StrategyResult:
+        """SMART collection not available in fallback strategy"""
+        return self._create_not_supported_result("SMART disk data not available in fallback environment")

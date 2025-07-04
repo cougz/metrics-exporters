@@ -67,6 +67,21 @@ class CollectionStrategy(abc.ABC):
         """Collect process metrics"""
         pass
     
+    @abc.abstractmethod
+    def collect_sensors(self) -> StrategyResult:
+        """Collect sensors metrics"""
+        pass
+    
+    @abc.abstractmethod
+    def collect_smart(self) -> StrategyResult:
+        """Collect SMART metrics"""
+        pass
+    
+    @abc.abstractmethod
+    def collect_zfs(self) -> StrategyResult:
+        """Collect ZFS metrics"""
+        pass
+    
     def supports_method(self, method: CollectionMethod) -> bool:
         """Check if strategy supports a collection method"""
         return method in self.supported_methods

@@ -114,17 +114,42 @@ class EnvironmentAwareMetricsRegistry:
             'zfs': ('collectors.zfs_enhanced', 'ZFSCollector'),
         }
         
+        # Handle legacy sensor collector names
+        legacy_sensor_mapping = {
+            'sensors_cpu': 'sensors',
+            'sensors_nvme': 'sensors'
+        }
+        
+        registered_sensors = False
         for collector_name in enabled_collectors:
-            if collector_name in collector_mapping:
-                module_name, class_name = collector_mapping[collector_name]
+            # Map legacy sensor names to unified sensors
+            target_collector = legacy_sensor_mapping.get(collector_name, collector_name)
+            
+            # Skip if this legacy sensor type already mapped to unified sensors
+            if collector_name in legacy_sensor_mapping and registered_sensors:
+                logger.info(f"Skipping {collector_name} - unified sensors collector already registered")
+                continue
+                
+            if target_collector in collector_mapping:
+                module_name, class_name = collector_mapping[target_collector]
                 
                 try:
                     module = importlib.import_module(module_name)
                     collector_class = getattr(module, class_name)
                     collector = collector_class(self.config)
                     
-                    self.collectors[collector_name] = collector
-                    logger.info(f"Registered enhanced collector: {collector_name}")
+                    # Use the target name for registration
+                    if target_collector not in self.collectors:
+                        self.collectors[target_collector] = collector
+                        logger.info(f"Registered enhanced collector: {target_collector}")
+                        
+                        if target_collector == 'sensors':
+                            registered_sensors = True
+                    
+                    # If this was a legacy name, also register under legacy name for compatibility
+                    if collector_name in legacy_sensor_mapping and collector_name != target_collector:
+                        self.collectors[collector_name] = collector
+                        logger.info(f"Registered legacy collector alias: {collector_name} -> {target_collector}")
                     
                 except Exception as e:
                     logger.error(f"Failed to register collector {collector_name}: {e}")

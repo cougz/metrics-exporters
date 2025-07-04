@@ -84,6 +84,14 @@ class ContainerStrategy(CollectionStrategy):
         """NVMe sensors collection not available in container environments"""
         return self._create_not_supported_result("NVMe sensors not accessible in containers")
     
+    def collect_sensors(self) -> StrategyResult:
+        """Sensors collection not available in container environments"""
+        return self._create_not_supported_result("Hardware sensors not accessible in containers")
+    
+    def collect_smart(self) -> StrategyResult:
+        """SMART collection not available in container environments"""
+        return self._create_not_supported_result("SMART disk data not accessible in containers")
+    
     def _detect_cgroup_version(self) -> int:
         """Detect cgroup version (1 or 2)"""
         try:
