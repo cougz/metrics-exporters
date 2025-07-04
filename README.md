@@ -1,18 +1,17 @@
-# Platform-Agnostic Metrics Exporter
+# Metrics Exporter
 
-A platform-agnostic Python-based metrics exporter that intelligently adapts between LXC containers and Proxmox hosts, with configurable export formats (Prometheus or OpenTelemetry OTLP).
+A lightweight, platform-agnostic system metrics exporter that intelligently adapts between container and host environments, with configurable export formats (Prometheus or OpenTelemetry OTLP).
 
 ## Features
 
-- 🌐 **Platform-Agnostic**: Automatically detects LXC containers vs Proxmox hosts and adapts collection strategies
+- 🔍 **Environment-Aware**: Automatically detects container vs host environments and adapts collection strategies
 - 🎯 **Prometheus Compliant**: Follows Prometheus naming conventions and best practices
 - 🔄 **Configurable Export**: Choose between Prometheus file format OR OpenTelemetry OTLP export (mutually exclusive)
-- 🧩 **Environment-Aware**: Strategy pattern for optimal collection methods per environment
+- 🧩 **Smart Collection**: Strategy pattern for optimal collection methods per environment
 - 🚀 **High Performance**: Threaded metrics collection with configurable intervals
 - 📊 **Rich Metrics**: Memory, CPU, disk, network, and process metrics with proper labels
 - 🔒 **Production Ready**: Systemd service integration with proper user isolation
 - 🏷️ **Smart Labeling**: Environment-aware instance identification
-- 🏠 **Proxmox Integration**: Multi-container monitoring and cluster information when running on Proxmox hosts
 
 ## Metrics
 
@@ -34,9 +33,9 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 
 ### Labels
 All metrics include standard labels:
-- `host_name` - Container host name
-- `container_id` - LXC container ID
-- `instance` - Instance identifier (format: `hostname:container_id`)
+- `host_name` - Host name
+- `container_id` - Container ID (when running in containers)
+- `instance` - Instance identifier (format varies by environment)
 
 ## Quick Start
 
@@ -186,9 +185,9 @@ Add this job to your Prometheus configuration:
 
 ```yaml
 scrape_configs:
-  - job_name: 'lxc-metrics'
+  - job_name: 'system-metrics'
     static_configs:
-      - targets: ['your-lxc-host:9100']
+      - targets: ['your-host:9100']
     scrape_interval: 30s
     metrics_path: /metrics
 ```
@@ -237,7 +236,7 @@ Configuration
 
 ### Project Structure
 ```
-lxc/
+/opt/metrics-exporters/
 ├── app/
 │   ├── __init__.py
 │   └── server.py              # FastAPI application
@@ -247,6 +246,11 @@ lxc/
 │   ├── memory.py             # Memory metrics collector
 │   ├── disk.py               # Disk metrics collector
 │   └── process.py            # Process metrics collector
+├── environment/
+│   ├── __init__.py
+│   ├── detection.py          # Environment detection logic
+│   ├── capabilities.py       # Environment capability mapping
+│   └── context.py            # Runtime environment context
 ├── metrics/
 │   ├── __init__.py
 │   ├── models.py             # Metric data models with ExportFormat enum
@@ -283,7 +287,7 @@ from metrics.models import MetricValue, MetricType
 
 class NetworkCollector(BaseCollector):
     def __init__(self, config=None):
-        super().__init__(config, "network", "LXC container network metrics")
+        super().__init__(config, "network", "System network metrics")
     
     def collect(self) -> List[MetricValue]:
         # Implement collection logic

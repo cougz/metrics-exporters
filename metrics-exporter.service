@@ -1,5 +1,5 @@
 [Unit]
-Description=Platform-Agnostic Metrics Exporter
+Description=Metrics Exporter
 After=network.target
 
 [Service]

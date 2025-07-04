@@ -21,12 +21,12 @@ logger = get_logger(__name__)
 
 
 class MetricsServer:
-    """FastAPI server for LXC metrics exporter"""
+    """FastAPI server for metrics exporter"""
     
     def __init__(self, config: Config):
         self.config = config
         self.app = FastAPI(
-            title="LXC Metrics Exporter",
+            title="Metrics Exporter",
             version="1.0.0",
             docs_url=None,  # Disable docs for security
             redoc_url=None,  # Disable redoc for security
@@ -270,9 +270,7 @@ class MetricsServer:
                     <ul>
                         <li><strong>Environment Type:</strong> <span class="status-enabled">{environment_info.get('type', 'unknown').upper()}</span></li>
                         <li><strong>Detection Confidence:</strong> {environment_info.get('detection_confidence', 0):.1%}</li>
-                        <li><strong>Multi-Container Support:</strong> <span class="{'status-enabled' if environment_info.get('supports_multi_container', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_multi_container', False) else 'No'}</span></li>
                         <li><strong>Hardware Access:</strong> <span class="{'status-enabled' if environment_info.get('supports_hardware_access', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_hardware_access', False) else 'No'}</span></li>
-                        <li><strong>Proxmox Features:</strong> <span class="{'status-enabled' if environment_info.get('supports_proxmox_features', False) else 'status-disabled'}">{'Yes' if environment_info.get('supports_proxmox_features', False) else 'No'}</span></li>
                     </ul>
                 </div>
             """
@@ -281,7 +279,7 @@ class MetricsServer:
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Platform-Agnostic Metrics Exporter</title>
+            <title>Metrics Exporter</title>
             <style>
                 body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f5f5f5; }}
                 .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
@@ -296,8 +294,8 @@ class MetricsServer:
         <body>
             <div class="container">
                 <div class="header">
-                    <h1>Platform-Agnostic Metrics Exporter</h1>
-                    <p>Platform-agnostic metrics exporter with environment-aware collection</p>
+                    <h1>Metrics Exporter</h1>
+                    <p>System metrics exporter with intelligent collection strategies</p>
                 </div>
                 
                 <h2>Available Endpoints:</h2>

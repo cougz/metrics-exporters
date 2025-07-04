@@ -30,9 +30,9 @@ class EnvironmentAwareMetricsRegistry:
                 self.config.force_environment):
                 
                 env_type_map = {
-                    'lxc_container': EnvironmentType.LXC_CONTAINER,
-                    'proxmox_host': EnvironmentType.PROXMOX_HOST,
-                    'generic_host': EnvironmentType.GENERIC_HOST
+                    'container': EnvironmentType.CONTAINER,
+                    'host': EnvironmentType.HOST,
+                    'unknown': EnvironmentType.UNKNOWN
                 }
                 
                 forced_env = env_type_map.get(self.config.force_environment.lower())
@@ -109,32 +109,14 @@ class EnvironmentAwareMetricsRegistry:
     def _register_environment_specific_collectors(self):
         """Register collectors specific to the current environment"""
         try:
-            if self._runtime_env.is_proxmox_host:
-                # Register Proxmox-specific collectors
-                self._register_proxmox_collectors()
+            # Environment-specific collectors can be added here if needed
+            pass
             
             # Could add other environment-specific collectors here
             
         except Exception as e:
             logger.error(f"Failed to register environment-specific collectors: {e}")
     
-    def _register_proxmox_collectors(self):
-        """Register Proxmox-specific collectors"""
-        try:
-            # Proxmox system collector
-            from collectors.proxmox.system import ProxmoxSystemCollector
-            system_collector = ProxmoxSystemCollector(self.config)
-            self.collectors['proxmox_system'] = system_collector
-            logger.info("Registered Proxmox system collector")
-            
-            # Container inventory collector
-            from collectors.proxmox.containers import ContainerInventoryCollector
-            inventory_collector = ContainerInventoryCollector(self.config)
-            self.collectors['container_inventory'] = inventory_collector
-            logger.info("Registered container inventory collector")
-            
-        except Exception as e:
-            logger.error(f"Failed to register Proxmox collectors: {e}")
     
     def _register_fallback_collector(self, collector_name: str):
         """Register fallback to original collector if enhanced version fails"""
@@ -274,9 +256,7 @@ class EnvironmentAwareMetricsRegistry:
                 "type": self._runtime_env.environment_type.value,
                 "detection_confidence": self._runtime_env.detection_result.confidence,
                 "detection_methods": self._runtime_env.detection_result.detection_methods,
-                "supports_multi_container": self._runtime_env.supports_multi_container,
                 "supports_hardware_access": self._runtime_env.supports_hardware_access,
-                "supports_proxmox_features": self._runtime_env.supports_proxmox_features,
             },
             "collectors": {}
         }

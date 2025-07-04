@@ -34,7 +34,7 @@ class EnvironmentCapabilities:
     """Maps environment types to their collection capabilities"""
     
     _capabilities: Dict[EnvironmentType, EnvironmentCapability] = {
-        EnvironmentType.LXC_CONTAINER: EnvironmentCapability(
+        EnvironmentType.CONTAINER: EnvironmentCapability(
             available_methods={
                 CollectionMethod.CGROUP_V1,
                 CollectionMethod.CGROUP_V2,
@@ -64,7 +64,7 @@ class EnvironmentCapabilities:
             ]
         ),
         
-        EnvironmentType.PROXMOX_HOST: EnvironmentCapability(
+        EnvironmentType.HOST: EnvironmentCapability(
             available_methods={
                 CollectionMethod.CGROUP_V1,
                 CollectionMethod.CGROUP_V2,
@@ -73,8 +73,6 @@ class EnvironmentCapabilities:
                 CollectionMethod.SYSTEMD_SERVICES,
                 CollectionMethod.FILESYSTEM_FULL,
                 CollectionMethod.PROCESS_TREE_FULL,
-                CollectionMethod.PROXMOX_API,
-                CollectionMethod.LXC_COMMANDS,
             },
             preferred_methods=[
                 CollectionMethod.HARDWARE_ACCESS,
@@ -88,36 +86,7 @@ class EnvironmentCapabilities:
             restrictions=[],
             special_features=[
                 "full_hardware_access",
-                "multi_container_monitoring",
-                "proxmox_cluster_info",
-                "lxc_container_management",
                 "system_wide_metrics"
-            ]
-        ),
-        
-        EnvironmentType.GENERIC_HOST: EnvironmentCapability(
-            available_methods={
-                CollectionMethod.PROC_FILESYSTEM,
-                CollectionMethod.HARDWARE_ACCESS,
-                CollectionMethod.SYSTEMD_SERVICES,
-                CollectionMethod.FILESYSTEM_FULL,
-                CollectionMethod.PROCESS_TREE_FULL,
-            },
-            preferred_methods=[
-                CollectionMethod.PROC_FILESYSTEM,
-                CollectionMethod.HARDWARE_ACCESS,
-            ],
-            fallback_methods=[
-                CollectionMethod.SYSTEMD_SERVICES,
-                CollectionMethod.FILESYSTEM_FULL,
-            ],
-            restrictions=[
-                "no_proxmox_features",
-                "no_container_management"
-            ],
-            special_features=[
-                "generic_host_metrics",
-                "standard_linux_access"
             ]
         ),
         
@@ -173,19 +142,9 @@ class EnvironmentCapabilities:
         return capabilities.special_features
     
     @classmethod
-    def supports_multi_container(cls, env_type: EnvironmentType) -> bool:
-        """Check if environment supports multi-container monitoring"""
-        return "multi_container_monitoring" in cls.get_special_features(env_type)
-    
-    @classmethod
     def supports_hardware_access(cls, env_type: EnvironmentType) -> bool:
         """Check if environment supports hardware access"""
         return "full_hardware_access" in cls.get_special_features(env_type)
-    
-    @classmethod
-    def supports_proxmox_features(cls, env_type: EnvironmentType) -> bool:
-        """Check if environment supports Proxmox-specific features"""
-        return "proxmox_cluster_info" in cls.get_special_features(env_type)
     
     @classmethod
     def get_optimal_collection_strategy(cls, env_type: EnvironmentType, 
@@ -196,83 +155,63 @@ class EnvironmentCapabilities:
         # Define collector-specific method preferences
         collector_preferences = {
             "memory": {
-                EnvironmentType.LXC_CONTAINER: [
+                EnvironmentType.CONTAINER: [
                     CollectionMethod.CGROUP_V2,
                     CollectionMethod.CGROUP_V1,
                     CollectionMethod.CONTAINER_LIMITS,
                     CollectionMethod.PROC_FILESYSTEM
                 ],
-                EnvironmentType.PROXMOX_HOST: [
+                EnvironmentType.HOST: [
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.HARDWARE_ACCESS,
                     CollectionMethod.CGROUP_V2
-                ],
-                EnvironmentType.GENERIC_HOST: [
-                    CollectionMethod.PROC_FILESYSTEM,
-                    CollectionMethod.HARDWARE_ACCESS
                 ]
             },
             "cpu": {
-                EnvironmentType.LXC_CONTAINER: [
+                EnvironmentType.CONTAINER: [
                     CollectionMethod.CGROUP_V2,
                     CollectionMethod.CGROUP_V1,
                     CollectionMethod.PROC_FILESYSTEM
                 ],
-                EnvironmentType.PROXMOX_HOST: [
+                EnvironmentType.HOST: [
                     CollectionMethod.HARDWARE_ACCESS,
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.CGROUP_V2
-                ],
-                EnvironmentType.GENERIC_HOST: [
-                    CollectionMethod.PROC_FILESYSTEM,
-                    CollectionMethod.HARDWARE_ACCESS
                 ]
             },
             "disk": {
-                EnvironmentType.LXC_CONTAINER: [
+                EnvironmentType.CONTAINER: [
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.CGROUP_V2,
                     CollectionMethod.CGROUP_V1
                 ],
-                EnvironmentType.PROXMOX_HOST: [
+                EnvironmentType.HOST: [
                     CollectionMethod.FILESYSTEM_FULL,
                     CollectionMethod.HARDWARE_ACCESS,
-                    CollectionMethod.PROC_FILESYSTEM
-                ],
-                EnvironmentType.GENERIC_HOST: [
-                    CollectionMethod.FILESYSTEM_FULL,
                     CollectionMethod.PROC_FILESYSTEM
                 ]
             },
             "network": {
-                EnvironmentType.LXC_CONTAINER: [
+                EnvironmentType.CONTAINER: [
                     CollectionMethod.NETWORK_NAMESPACES,
                     CollectionMethod.PROC_FILESYSTEM
                 ],
-                EnvironmentType.PROXMOX_HOST: [
+                EnvironmentType.HOST: [
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.HARDWARE_ACCESS,
                     CollectionMethod.NETWORK_NAMESPACES
-                ],
-                EnvironmentType.GENERIC_HOST: [
-                    CollectionMethod.PROC_FILESYSTEM,
-                    CollectionMethod.HARDWARE_ACCESS
                 ]
             },
             "process": {
-                EnvironmentType.LXC_CONTAINER: [
+                EnvironmentType.CONTAINER: [
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.CGROUP_V2,
                     CollectionMethod.CGROUP_V1
                 ],
-                EnvironmentType.PROXMOX_HOST: [
+                EnvironmentType.HOST: [
                     CollectionMethod.PROCESS_TREE_FULL,
                     CollectionMethod.PROC_FILESYSTEM,
                     CollectionMethod.SYSTEMD_SERVICES
-                ],
-                EnvironmentType.GENERIC_HOST: [
-                    CollectionMethod.PROCESS_TREE_FULL,
-                    CollectionMethod.PROC_FILESYSTEM
                 ]
             }
         }

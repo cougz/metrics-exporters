@@ -12,9 +12,8 @@ logger = logging.getLogger(__name__)
 
 class EnvironmentType(Enum):
     """Environment types that can be detected"""
-    LXC_CONTAINER = "lxc_container"
-    PROXMOX_HOST = "proxmox_host"
-    GENERIC_HOST = "generic_host"
+    CONTAINER = "container"
+    HOST = "host" 
     UNKNOWN = "unknown"
 
 
@@ -29,7 +28,7 @@ class DetectionResult:
 
 
 class EnvironmentDetector:
-    """Detect whether running in LXC container or Proxmox host"""
+    """Detect whether running in a container or host environment"""
     
     def __init__(self):
         self._detection_cache: Optional[DetectionResult] = None
@@ -51,9 +50,8 @@ class EnvironmentDetector:
         
         # Run all detection methods
         detectors = [
-            self._detect_lxc_container,
-            self._detect_proxmox_host,
-            self._detect_generic_host
+            self._detect_container,
+            self._detect_host
         ]
         
         results = []
@@ -90,8 +88,8 @@ class EnvironmentDetector:
         self._force_environment = env_type
         self._detection_cache = None
     
-    def _detect_lxc_container(self) -> Optional[DetectionResult]:
-        """Detect LXC container environment"""
+    def _detect_container(self) -> Optional[DetectionResult]:
+        """Detect container environment"""
         detection_methods = []
         metadata = {}
         confidence = 0.0
@@ -129,90 +127,50 @@ class EnvironmentDetector:
         
         if confidence >= 0.5:
             return DetectionResult(
-                environment_type=EnvironmentType.LXC_CONTAINER,
+                environment_type=EnvironmentType.CONTAINER,
                 confidence=min(confidence, 1.0),
                 detection_methods=detection_methods,
                 metadata=metadata,
-                reason=f"LXC container detected via {', '.join(detection_methods)}"
+                reason=f"Container environment detected via {', '.join(detection_methods)}"
             )
         
         return None
     
-    def _detect_proxmox_host(self) -> Optional[DetectionResult]:
-        """Detect Proxmox host environment"""
+    def _detect_host(self) -> Optional[DetectionResult]:
+        """Detect host environment"""
         detection_methods = []
         metadata = {}
-        confidence = 0.0
-        
-        # Check 1: PVE directory structure
-        if Path("/etc/pve").exists():
-            detection_methods.append("pve_directory")
-            confidence += 0.4
-            metadata["pve_config"] = True
-        
-        # Check 2: PVE services
-        pve_services = self._check_pve_services()
-        if pve_services:
-            detection_methods.append("pve_services")
-            confidence += 0.3
-            metadata["pve_services"] = pve_services
-        
-        # Check 3: PVE packages
-        pve_packages = self._check_pve_packages()
-        if pve_packages:
-            detection_methods.append("pve_packages")
-            confidence += 0.2
-            metadata["pve_packages"] = pve_packages
-        
-        # Check 4: PVE cluster status
-        cluster_info = self._check_pve_cluster()
-        if cluster_info:
-            detection_methods.append("pve_cluster")
-            confidence += 0.1
-            metadata["cluster_info"] = cluster_info
-        
-        if confidence >= 0.5:
-            return DetectionResult(
-                environment_type=EnvironmentType.PROXMOX_HOST,
-                confidence=min(confidence, 1.0),
-                detection_methods=detection_methods,
-                metadata=metadata,
-                reason=f"Proxmox host detected via {', '.join(detection_methods)}"
-            )
-        
-        return None
-    
-    def _detect_generic_host(self) -> Optional[DetectionResult]:
-        """Detect generic host environment (fallback)"""
-        detection_methods = []
-        metadata = {}
-        confidence = 0.1  # Low confidence fallback
+        confidence = 0.3  # Base confidence for host detection
         
         # Check if we have root privileges and full system access
         if os.geteuid() == 0:
             detection_methods.append("root_privileges")
-            confidence += 0.1
+            confidence += 0.2
             metadata["root_access"] = True
         
         # Check for full /proc access
         if self._check_full_proc_access():
             detection_methods.append("full_proc_access")
-            confidence += 0.1
+            confidence += 0.2
             metadata["full_proc"] = True
         
         # Check for hardware access
         if self._check_hardware_access():
             detection_methods.append("hardware_access")
-            confidence += 0.1
+            confidence += 0.3
             metadata["hardware_access"] = True
         
-        return DetectionResult(
-            environment_type=EnvironmentType.GENERIC_HOST,
-            confidence=confidence,
-            detection_methods=detection_methods,
-            metadata=metadata,
-            reason="Generic host environment (fallback detection)"
-        )
+        if confidence >= 0.5:
+            return DetectionResult(
+                environment_type=EnvironmentType.HOST,
+                confidence=min(confidence, 1.0),
+                detection_methods=detection_methods,
+                metadata=metadata,
+                reason=f"Host environment detected via {', '.join(detection_methods)}"
+            )
+        
+        return None
+    
     
     def _check_cgroup_container(self) -> bool:
         """Check cgroup paths for container indicators"""
@@ -342,98 +300,6 @@ class EnvironmentDetector:
         except Exception:
             return False
     
-    def _check_pve_services(self) -> Optional[List[str]]:
-        """Check for running PVE services"""
-        try:
-            pve_services = [
-                "pve-cluster",
-                "pveproxy",
-                "pvedaemon", 
-                "pvestatd",
-                "pve-firewall"
-            ]
-            
-            running_services = []
-            for service in pve_services:
-                try:
-                    result = subprocess.run(
-                        ["systemctl", "is-active", service],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0 and result.stdout.strip() == "active":
-                        running_services.append(service)
-                except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-                    pass
-            
-            return running_services if running_services else None
-        except Exception:
-            return None
-    
-    def _check_pve_packages(self) -> Optional[List[str]]:
-        """Check for installed PVE packages"""
-        try:
-            pve_packages = [
-                "proxmox-ve",
-                "pve-manager",
-                "pve-kernel",
-                "pve-qemu-kvm"
-            ]
-            
-            installed_packages = []
-            for package in pve_packages:
-                try:
-                    result = subprocess.run(
-                        ["dpkg", "-l", package],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        installed_packages.append(package)
-                except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-                    pass
-            
-            return installed_packages if installed_packages else None
-        except Exception:
-            return None
-    
-    def _check_pve_cluster(self) -> Optional[Dict[str, Any]]:
-        """Check PVE cluster status"""
-        try:
-            cluster_info = {}
-            
-            # Check cluster status
-            try:
-                result = subprocess.run(
-                    ["pvecm", "status"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    cluster_info["cluster_active"] = True
-                    cluster_info["cluster_status"] = result.stdout.strip()
-            except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-                cluster_info["cluster_active"] = False
-            
-            # Check node list
-            try:
-                result = subprocess.run(
-                    ["pvecm", "nodes"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    cluster_info["nodes"] = result.stdout.strip()
-            except (subprocess.TimeoutExpired, subprocess.SubprocessError):
-                pass
-            
-            return cluster_info if cluster_info else None
-        except Exception:
-            return None
     
     def _check_full_proc_access(self) -> bool:
         """Check if we have full /proc access"""
