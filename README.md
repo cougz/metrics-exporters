@@ -43,6 +43,18 @@ All metrics follow Prometheus naming conventions with the `node_` prefix:
 ### Process Metrics
 - `node_processes_total` - Number of processes
 
+### Hardware Sensor Metrics (Host environments only)
+- `node_hwmon_temp_celsius{sensor,chip,feature}` - Hardware monitor temperature in Celsius
+- `node_hwmon_temp_crit_celsius{sensor,chip,feature}` - Hardware monitor critical temperature threshold
+- `node_hwmon_temp_max_celsius{sensor,chip,feature}` - Hardware monitor maximum temperature threshold
+- `node_hwmon_fan_rpm{sensor,chip,type}` - Hardware monitor fan speed in RPM
+- `node_hwmon_voltage_volts{sensor,chip,type}` - Hardware monitor voltage in volts
+- `node_hwmon_power_watts{sensor,chip,type}` - Hardware monitor power consumption in watts
+- `node_disk_temperature_celsius{device,model,interface}` - Disk temperature in Celsius
+- `node_disk_temp_warning_celsius{device,model,interface}` - Disk temperature warning threshold
+- `node_disk_temp_critical_celsius{device,model,interface}` - Disk temperature critical threshold
+- `node_disk_smart_health_ok{device,model,interface}` - Disk SMART health status (1 = healthy, 0 = unhealthy)
+
 ### Labels
 All metrics include standard labels:
 - `host_name` - Host name

@@ -87,6 +87,7 @@ class EnvironmentAwareMetricsRegistry:
             'disk': ('collectors.disk_enhanced', 'DiskCollector'),
             'network': ('collectors.network_enhanced', 'NetworkCollector'),
             'process': ('collectors.process_enhanced', 'ProcessCollector'),
+            'sensors': ('collectors.sensors_enhanced', 'SensorsCollector'),
         }
         
         for collector_name in enabled_collectors:

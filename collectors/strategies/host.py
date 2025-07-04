@@ -46,6 +46,10 @@ class HostStrategy(CollectionStrategy):
         """Collect process metrics with full system access"""
         return self._collect_process_full()
     
+    def collect_sensors(self) -> StrategyResult:
+        """Collect hardware sensor metrics with full access"""
+        return self._collect_sensors_full()
+    
     def collect_proxmox_system(self) -> StrategyResult:
         """Collect Proxmox-specific system metrics"""
         return self._collect_proxmox_system()
@@ -657,3 +661,419 @@ class HostStrategy(CollectionStrategy):
         except (subprocess.TimeoutExpired, subprocess.SubprocessError):
             pass
         return None
+    
+    def _collect_sensors_full(self) -> StrategyResult:
+        """Collect comprehensive hardware sensor metrics"""
+        try:
+            data = {}
+            errors = []
+            
+            # Collect CPU and system temperatures using sensors command
+            cpu_temps = self._collect_cpu_temperatures()
+            if cpu_temps:
+                data["cpu_temperatures"] = cpu_temps
+            
+            # Collect disk temperatures using smartctl
+            disk_temps = self._collect_disk_temperatures()
+            if disk_temps:
+                data["disk_temperatures"] = disk_temps
+            
+            # Collect additional thermal sensors (fans, voltage, etc.)
+            thermal_sensors = self._collect_thermal_sensors()
+            if thermal_sensors:
+                data["thermal_sensors"] = thermal_sensors
+            
+            if data:
+                return self._create_success_result(data, CollectionMethod.HARDWARE_ACCESS)
+            else:
+                return self._create_failure_result(errors or ["No sensor data available"])
+        
+        except Exception as e:
+            return self._create_failure_result([f"Sensors collection failed: {e}"])
+    
+    def _collect_cpu_temperatures(self) -> Optional[List[Dict[str, Any]]]:
+        """Collect CPU temperature sensors using sensors command"""
+        try:
+            # Check if sensors command is available
+            result = subprocess.run(
+                ["which", "sensors"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("sensors command not available")
+                return None
+            
+            # Run sensors command to get temperature data
+            result = subprocess.run(
+                ["sensors", "-A", "-j"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode != 0:
+                # Try without JSON output
+                result = subprocess.run(
+                    ["sensors", "-A"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                if result.returncode == 0:
+                    return self._parse_sensors_text_output(result.stdout)
+                return None
+            
+            # Parse JSON output
+            try:
+                import json
+                sensors_data = json.loads(result.stdout)
+                return self._parse_sensors_json_output(sensors_data)
+            except json.JSONDecodeError:
+                # Fallback to text parsing
+                return self._parse_sensors_text_output(result.stdout)
+            
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+            logger.warning(f"Could not collect CPU temperatures: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"CPU temperature collection failed: {e}")
+            return None
+    
+    def _parse_sensors_json_output(self, sensors_data: dict) -> List[Dict[str, Any]]:
+        """Parse JSON output from sensors command"""
+        temperatures = []
+        
+        for chip_name, chip_data in sensors_data.items():
+            if isinstance(chip_data, dict):
+                for feature_name, feature_data in chip_data.items():
+                    if isinstance(feature_data, dict) and "temp" in feature_name.lower():
+                        temp_info = {
+                            "chip": chip_name,
+                            "feature": feature_name,
+                            "sensor_name": f"{chip_name}_{feature_name}"
+                        }
+                        
+                        # Extract temperature values
+                        for key, value in feature_data.items():
+                            if isinstance(value, (int, float)):
+                                if "input" in key:
+                                    temp_info["temp_celsius"] = value
+                                elif "crit" in key:
+                                    temp_info["temp_crit_celsius"] = value
+                                elif "max" in key:
+                                    temp_info["temp_max_celsius"] = value
+                        
+                        if "temp_celsius" in temp_info:
+                            temperatures.append(temp_info)
+        
+        return temperatures
+    
+    def _parse_sensors_text_output(self, sensors_output: str) -> List[Dict[str, Any]]:
+        """Parse text output from sensors command"""
+        temperatures = []
+        current_chip = "unknown"
+        
+        for line in sensors_output.split('\n'):
+            line = line.strip()
+            
+            # Detect chip name
+            if line and not line.startswith(' ') and ':' not in line and '°C' not in line:
+                current_chip = line
+                continue
+            
+            # Parse temperature lines
+            if '°C' in line and ':' in line:
+                try:
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        feature_name = parts[0].strip()
+                        temp_part = parts[1].strip()
+                        
+                        # Extract current temperature
+                        import re
+                        temp_match = re.search(r'([-+]?\d+\.?\d*)°C', temp_part)
+                        if temp_match:
+                            temp_celsius = float(temp_match.group(1))
+                            
+                            temp_info = {
+                                "chip": current_chip,
+                                "feature": feature_name,
+                                "sensor_name": f"{current_chip}_{feature_name}",
+                                "temp_celsius": temp_celsius
+                            }
+                            
+                            # Extract critical and max temperatures
+                            crit_match = re.search(r'crit\s*=\s*([-+]?\d+\.?\d*)°C', temp_part)
+                            if crit_match:
+                                temp_info["temp_crit_celsius"] = float(crit_match.group(1))
+                            
+                            max_match = re.search(r'max\s*=\s*([-+]?\d+\.?\d*)°C', temp_part)
+                            if max_match:
+                                temp_info["temp_max_celsius"] = float(max_match.group(1))
+                            
+                            temperatures.append(temp_info)
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"Could not parse temperature line: {line} - {e}")
+                    continue
+        
+        return temperatures
+    
+    def _collect_disk_temperatures(self) -> Optional[List[Dict[str, Any]]]:
+        """Collect disk temperatures using smartctl"""
+        try:
+            # Check if smartctl is available
+            result = subprocess.run(
+                ["which", "smartctl"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("smartctl command not available")
+                return None
+            
+            disk_temps = []
+            
+            # Get list of available disks
+            disks = self._get_available_disks()
+            
+            for disk_device in disks:
+                try:
+                    # Get SMART data for the disk
+                    result = subprocess.run(
+                        ["smartctl", "-A", "-j", disk_device],
+                        capture_output=True,
+                        text=True,
+                        timeout=20
+                    )
+                    
+                    if result.returncode in [0, 4]:  # 0 = success, 4 = some SMART errors but data available
+                        try:
+                            import json
+                            smart_data = json.loads(result.stdout)
+                            disk_info = self._parse_smartctl_output(smart_data, disk_device)
+                            if disk_info:
+                                disk_temps.append(disk_info)
+                        except json.JSONDecodeError:
+                            # Try text parsing as fallback
+                            disk_info = self._parse_smartctl_text_output(result.stdout, disk_device)
+                            if disk_info:
+                                disk_temps.append(disk_info)
+                except (subprocess.TimeoutExpired, subprocess.SubprocessError) as e:
+                    logger.debug(f"Could not get SMART data for {disk_device}: {e}")
+                    continue
+            
+            return disk_temps if disk_temps else None
+            
+        except Exception as e:
+            logger.warning(f"Disk temperature collection failed: {e}")
+            return None
+    
+    def _get_available_disks(self) -> List[str]:
+        """Get list of available disk devices"""
+        disks = []
+        
+        try:
+            # Check common disk device patterns
+            from pathlib import Path
+            dev_path = Path("/dev")
+            
+            # SATA/SCSI disks (sda, sdb, etc.)
+            for item in dev_path.glob("sd[a-z]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+            # NVMe disks (nvme0n1, nvme1n1, etc.)
+            for item in dev_path.glob("nvme[0-9]n[0-9]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+            # IDE disks (hda, hdb, etc.) - less common but still possible
+            for item in dev_path.glob("hd[a-z]"):
+                if item.is_block_device():
+                    disks.append(str(item))
+            
+        except Exception as e:
+            logger.debug(f"Could not enumerate disk devices: {e}")
+        
+        return disks[:10]  # Limit to first 10 disks to avoid excessive queries
+    
+    def _parse_smartctl_output(self, smart_data: dict, device: str) -> Optional[Dict[str, Any]]:
+        """Parse JSON output from smartctl"""
+        try:
+            disk_info = {
+                "device": device,
+                "model": smart_data.get("model_name", "unknown"),
+                "interface": smart_data.get("device", {}).get("type", "unknown")
+            }
+            
+            # Get SMART health
+            smart_status = smart_data.get("smart_status", {})
+            if "passed" in smart_status:
+                disk_info["smart_health"] = "PASSED" if smart_status["passed"] else "FAILED"
+            
+            # Get temperature from SMART attributes
+            ata_smart_attrs = smart_data.get("ata_smart_attributes", {}).get("table", [])
+            for attr in ata_smart_attrs:
+                if attr.get("name") in ["Temperature_Celsius", "Airflow_Temperature_Cel"]:
+                    disk_info["temperature_celsius"] = attr.get("raw", {}).get("value", 0)
+                    break
+            
+            # For NVMe disks, check temperature in different location
+            nvme_smart = smart_data.get("nvme_smart_health_information_log", {})
+            if "temperature" in nvme_smart:
+                disk_info["temperature_celsius"] = nvme_smart["temperature"]
+            
+            # Set default thresholds if not available from SMART
+            if "temperature_celsius" in disk_info:
+                # Typical safe operating temperatures for SSDs/HDDs
+                if "nvme" in device.lower():
+                    disk_info["temp_warning_celsius"] = 70  # NVMe typically warmer
+                    disk_info["temp_critical_celsius"] = 85
+                else:
+                    disk_info["temp_warning_celsius"] = 50  # Traditional drives
+                    disk_info["temp_critical_celsius"] = 60
+            
+            return disk_info if "temperature_celsius" in disk_info else None
+            
+        except Exception as e:
+            logger.debug(f"Could not parse SMART data for {device}: {e}")
+            return None
+    
+    def _parse_smartctl_text_output(self, smart_output: str, device: str) -> Optional[Dict[str, Any]]:
+        """Parse text output from smartctl as fallback"""
+        try:
+            import re
+            
+            disk_info = {
+                "device": device,
+                "model": "unknown",
+                "interface": "unknown"
+            }
+            
+            # Extract model name
+            model_match = re.search(r'Device Model:\s*(.+)', smart_output)
+            if model_match:
+                disk_info["model"] = model_match.group(1).strip()
+            
+            # Extract temperature
+            temp_match = re.search(r'Temperature_Celsius\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+(\d+)', smart_output)
+            if temp_match:
+                disk_info["temperature_celsius"] = int(temp_match.group(1))
+                
+                # Set default thresholds
+                if "nvme" in device.lower():
+                    disk_info["temp_warning_celsius"] = 70
+                    disk_info["temp_critical_celsius"] = 85
+                else:
+                    disk_info["temp_warning_celsius"] = 50
+                    disk_info["temp_critical_celsius"] = 60
+            
+            # Extract SMART health
+            if "SMART overall-health self-assessment test result: PASSED" in smart_output:
+                disk_info["smart_health"] = "PASSED"
+            elif "SMART overall-health self-assessment test result: FAILED" in smart_output:
+                disk_info["smart_health"] = "FAILED"
+            
+            return disk_info if "temperature_celsius" in disk_info else None
+            
+        except Exception as e:
+            logger.debug(f"Could not parse SMART text output for {device}: {e}")
+            return None
+    
+    def _collect_thermal_sensors(self) -> Optional[List[Dict[str, Any]]]:
+        """Collect additional thermal sensors (fans, voltage, power)"""
+        try:
+            # Check if sensors command is available
+            result = subprocess.run(
+                ["which", "sensors"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return None
+            
+            # Run sensors command to get all sensor data
+            result = subprocess.run(
+                ["sensors", "-A"],
+                capture_output=True,
+                text=True,
+                timeout=15
+            )
+            
+            if result.returncode != 0:
+                return None
+            
+            thermal_sensors = []
+            current_chip = "unknown"
+            
+            for line in result.stdout.split('\n'):
+                line = line.strip()
+                
+                # Detect chip name
+                if line and not line.startswith(' ') and ':' not in line and not any(unit in line for unit in ['°C', 'RPM', 'V', 'W']):
+                    current_chip = line
+                    continue
+                
+                # Parse fan speed lines
+                if 'RPM' in line and ':' in line:
+                    try:
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            sensor_name = parts[0].strip()
+                            import re
+                            rpm_match = re.search(r'(\d+)\s*RPM', parts[1])
+                            if rpm_match:
+                                thermal_sensors.append({
+                                    "chip": current_chip,
+                                    "sensor_name": f"{current_chip}_{sensor_name}",
+                                    "sensor_type": "fan",
+                                    "fan_rpm": int(rpm_match.group(1))
+                                })
+                    except (ValueError, AttributeError):
+                        continue
+                
+                # Parse voltage lines
+                elif 'V' in line and ':' in line and '°C' not in line:
+                    try:
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            sensor_name = parts[0].strip()
+                            import re
+                            voltage_match = re.search(r'([\d.]+)\s*V', parts[1])
+                            if voltage_match:
+                                thermal_sensors.append({
+                                    "chip": current_chip,
+                                    "sensor_name": f"{current_chip}_{sensor_name}",
+                                    "sensor_type": "voltage",
+                                    "voltage_volts": float(voltage_match.group(1))
+                                })
+                    except (ValueError, AttributeError):
+                        continue
+                
+                # Parse power lines
+                elif 'W' in line and ':' in line:
+                    try:
+                        parts = line.split(':')
+                        if len(parts) >= 2:
+                            sensor_name = parts[0].strip()
+                            import re
+                            power_match = re.search(r'([\d.]+)\s*W', parts[1])
+                            if power_match:
+                                thermal_sensors.append({
+                                    "chip": current_chip,
+                                    "sensor_name": f"{current_chip}_{sensor_name}",
+                                    "sensor_type": "power",
+                                    "power_watts": float(power_match.group(1))
+                                })
+                    except (ValueError, AttributeError):
+                        continue
+            
+            return thermal_sensors if thermal_sensors else None
+            
+        except Exception as e:
+            logger.warning(f"Thermal sensors collection failed: {e}")
+            return None

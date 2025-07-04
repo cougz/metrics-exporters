@@ -77,7 +77,7 @@ class RuntimeEnvironment:
         if self.is_container:
             return ["memory", "cpu", "disk", "network", "process"]
         elif self.is_host:
-            return ["memory", "cpu", "disk", "network", "process"]
+            return ["memory", "cpu", "disk", "network", "process", "sensors"]
         else:
             return ["memory", "process"]  # Minimal set for unknown environments
     

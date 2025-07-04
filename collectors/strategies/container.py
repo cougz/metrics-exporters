@@ -72,6 +72,10 @@ class ContainerStrategy(CollectionStrategy):
         # Use proc filesystem for process count
         return self._collect_process_proc()
     
+    def collect_sensors(self) -> StrategyResult:
+        """Sensors collection not available in container environments"""
+        return self._create_not_supported_result("Hardware sensors not accessible in containers")
+    
     def _detect_cgroup_version(self) -> int:
         """Detect cgroup version (1 or 2)"""
         try:
