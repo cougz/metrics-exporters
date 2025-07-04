@@ -74,18 +74,18 @@ sudo cp lxc-metrics-exporter.service /etc/systemd/system/
 sudo nano /etc/systemd/system/lxc-metrics-exporter.service
 ```
 
-**For Prometheus Export (default):**
-```ini
-Environment=EXPORT_FORMAT=prometheus
-```
-
-**For OTLP Export:**
+**For OTLP Export (default):**
 ```ini
 Environment=EXPORT_FORMAT=otlp
 Environment=OTEL_ENDPOINT=your-otel-collector:4317
 Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
 Environment=OTEL_SERVICE_VERSION=1.0.0
 Environment=OTEL_INSECURE=true
+```
+
+**For Prometheus Export:**
+```ini
+Environment=EXPORT_FORMAT=prometheus
 ```
 
 ```bash
@@ -105,7 +105,7 @@ sudo systemctl status lxc-metrics-exporter.service
 curl http://localhost:9100/health
 curl http://localhost:9100/status
 
-# For Prometheus export format:
+# For Prometheus export format only:
 curl http://localhost:9100/metrics
 ```
 
@@ -115,15 +115,7 @@ curl http://localhost:9100/metrics
 
 The exporter supports **mutually exclusive** export formats:
 
-#### Prometheus Format
-Writes metrics to a file that can be scraped by Prometheus:
-
-```ini
-Environment=EXPORT_FORMAT=prometheus
-Environment=PROMETHEUS_FILE=/opt/metrics-exporters/lxc/data/metrics.prom
-```
-
-#### OTLP Format  
+#### OTLP Format (default)
 Sends metrics directly to an OpenTelemetry collector via gRPC:
 
 ```ini
@@ -132,6 +124,14 @@ Environment=OTEL_ENDPOINT=otel-collector:4317
 Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
 Environment=OTEL_SERVICE_VERSION=1.0.0
 Environment=OTEL_INSECURE=true
+```
+
+#### Prometheus Format
+Writes metrics to a file that can be scraped by Prometheus:
+
+```ini
+Environment=EXPORT_FORMAT=prometheus
+Environment=PROMETHEUS_FILE=/opt/metrics-exporters/lxc/data/metrics.prom
 ```
 
 ### Other Configuration Options
@@ -152,20 +152,7 @@ Environment=INSTANCE_ID=custom-instance-id
 Environment=SERVICE_INSTANCE_ID=custom-service-instance-id
 ```
 
-### Prometheus Scraping (Prometheus Export Format Only)
-
-Add this job to your Prometheus configuration:
-
-```yaml
-scrape_configs:
-  - job_name: 'lxc-metrics'
-    static_configs:
-      - targets: ['your-lxc-host:9100']
-    scrape_interval: 30s
-    metrics_path: /metrics
-```
-
-### OpenTelemetry Collector Configuration (OTLP Export Format Only)
+### OpenTelemetry Collector Configuration (OTLP Export Format - Default)
 
 Configure your OTEL collector to receive metrics on the gRPC endpoint:
 
@@ -189,6 +176,19 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [prometheus]
+```
+
+### Prometheus Scraping (Prometheus Export Format Only)
+
+Add this job to your Prometheus configuration:
+
+```yaml
+scrape_configs:
+  - job_name: 'lxc-metrics'
+    static_configs:
+      - targets: ['your-lxc-host:9100']
+    scrape_interval: 30s
+    metrics_path: /metrics
 ```
 
 ## API Endpoints
@@ -300,18 +300,18 @@ class NetworkCollector(BaseCollector):
 ### Testing Different Export Formats
 
 ```bash
-# Test Prometheus format
-sudo systemctl stop lxc-metrics-exporter
-# Edit service file: Environment=EXPORT_FORMAT=prometheus
-sudo systemctl start lxc-metrics-exporter
-curl http://localhost:9100/metrics
-
-# Test OTLP format  
+# Test OTLP format (default)
 sudo systemctl stop lxc-metrics-exporter
 # Edit service file: Environment=EXPORT_FORMAT=otlp
 # Edit service file: Environment=OTEL_ENDPOINT=your-collector:4317
 sudo systemctl start lxc-metrics-exporter
 curl http://localhost:9100/health  # Check exporter_healthy status
+
+# Test Prometheus format
+sudo systemctl stop lxc-metrics-exporter
+# Edit service file: Environment=EXPORT_FORMAT=prometheus
+sudo systemctl start lxc-metrics-exporter
+curl http://localhost:9100/metrics
 ```
 
 ## Troubleshooting

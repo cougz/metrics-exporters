@@ -13,15 +13,15 @@ RestartSec=5
 Environment=PYTHONPATH=/opt/metrics-exporters/lxc
 
 # Export format configuration (choose one):
-# For Prometheus export (default):
-Environment=EXPORT_FORMAT=prometheus
+# For OTLP export (default):
+Environment=EXPORT_FORMAT=otlp
+Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
+Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
+Environment=OTEL_SERVICE_VERSION=1.0.0
+Environment=OTEL_INSECURE=true
 
-# For OTLP export (uncomment and configure):
-#Environment=EXPORT_FORMAT=otlp
-#Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
-#Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
-#Environment=OTEL_SERVICE_VERSION=1.0.0
-#Environment=OTEL_INSECURE=true
+# For Prometheus export (uncomment and configure):
+#Environment=EXPORT_FORMAT=prometheus
 
 [Install]
 WantedBy=multi-user.target

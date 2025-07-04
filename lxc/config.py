@@ -16,7 +16,7 @@ class Config(BaseSettings):
     metrics_host: str = Field(default="0.0.0.0", description="Metrics server host")
     
     # Export configuration - mutually exclusive formats
-    export_format: ExportFormat = Field(default=ExportFormat.PROMETHEUS, description="Export format (prometheus or otlp)")
+    export_format: ExportFormat = Field(default=ExportFormat.OTLP, description="Export format (prometheus or otlp)")
     
     # Prometheus configuration (only used when export_format=PROMETHEUS)
     prometheus_file: Path = Field(default=Path("/opt/metrics-exporters/lxc/data/metrics.prom"), description="Prometheus metrics file path")
