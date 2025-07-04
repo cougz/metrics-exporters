@@ -61,10 +61,14 @@ class EnvironmentAwareMetricsRegistry:
             # Always start with environment-detected collectors
             auto_detected_collectors = self._runtime_env.get_default_collectors()
             
-            # Allow config override, but warn if enabling unavailable collectors
-            if (hasattr(self.config, 'enabled_collectors') and 
-                self.config.enabled_collectors):
-                enabled_collectors = self.config.enabled_collectors
+            # Use auto-detected collectors by default, allow config override only if explicitly set
+            config_collectors = getattr(self.config, 'enabled_collectors', [])
+            config_is_default = set(config_collectors) == {"memory", "filesystem", "process", "cpu", "network"}
+            
+            if config_collectors and not config_is_default:
+                # Config has been explicitly overridden from defaults
+                enabled_collectors = config_collectors
+                logger.info(f"Using config-specified collectors: {enabled_collectors}")
                 
                 # Warn about potentially unavailable collectors
                 for collector in enabled_collectors:
@@ -76,7 +80,9 @@ class EnvironmentAwareMetricsRegistry:
                 if missing_auto:
                     logger.info(f"Auto-detected collectors not in config: {list(missing_auto)}")
             else:
+                # Use auto-detected collectors (config is at defaults or empty)
                 enabled_collectors = auto_detected_collectors
+                logger.info(f"Using auto-detected collectors (config at defaults): {enabled_collectors}")
             
             logger.info(f"Auto-detected collectors: {auto_detected_collectors}")
             logger.info(f"Enabled collectors: {enabled_collectors}")

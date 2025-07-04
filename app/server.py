@@ -334,6 +334,7 @@ class MetricsServer:
                 <div class="endpoint"><a href="/health">/health</a> - Health check</div>
                 <div class="endpoint"><a href="/status">/status</a> - Status information</div>
                 <div class="endpoint"><a href="/collectors">/collectors</a> - Collector information</div>
+                <div class="endpoint"><a href="/debug/detection">/debug/detection</a> - Hardware detection debug</div>
                 
                 {env_section}
                 
