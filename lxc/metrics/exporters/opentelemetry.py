@@ -1,5 +1,5 @@
-"""OpenTelemetry SDK exporter"""
-import logging
+"""OpenTelemetry SDK exporter with connection pooling and batching"""
+import asyncio
 import time
 from typing import List, Optional
 from opentelemetry import metrics
@@ -9,22 +9,39 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from ..models import MetricValue, MetricType
+from .batch_exporter import BatchExporter
+from logging_config import get_logger
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+
+class OpenTelemetryBatchExporter(BatchExporter):
+    """Batched OpenTelemetry exporter"""
+    
+    def __init__(self, otel_exporter: 'OpenTelemetryExporter', **kwargs):
+        super().__init__(**kwargs)
+        self.otel_exporter = otel_exporter
+    
+    def _export_batch_sync(self, batch: List[MetricValue]):
+        """Export batch of metrics synchronously"""
+        if self.otel_exporter and self.otel_exporter.is_enabled():
+            self.otel_exporter._export_metrics_sync(batch)
 
 
 class OpenTelemetryExporter:
-    """Export metrics using OpenTelemetry SDK"""
+    """Export metrics using OpenTelemetry SDK with batching and connection pooling"""
     
     def __init__(self, config=None):
         self.config = config
         self.meter_provider: Optional[MeterProvider] = None
         self.meter = None
         self.instruments = {}
+        self._batch_exporter = None
         
         if config and config.otel_enabled:
             self._setup_otel()
+            self._setup_batch_exporter()
     
     def _setup_otel(self):
         """Setup OpenTelemetry SDK"""
@@ -70,12 +87,23 @@ class OpenTelemetryExporter:
                 self.config.otel_service_version
             )
             
-            logger.info(f"OpenTelemetry exporter configured for endpoint: {endpoint}")
+            logger.info("OpenTelemetry exporter configured", endpoint=endpoint, event_type="otel_setup")
             
         except Exception as e:
-            logger.error(f"Failed to setup OpenTelemetry: {e}")
+            logger.error("Failed to setup OpenTelemetry", error=str(e), event_type="otel_setup_error", exc_info=True)
             self.meter_provider = None
             self.meter = None
+    
+    def _setup_batch_exporter(self):
+        """Setup batch exporter for improved performance"""
+        if self.meter_provider:
+            self._batch_exporter = OpenTelemetryBatchExporter(
+                self,
+                batch_size=getattr(self.config, 'otel_batch_size', 100),
+                batch_timeout=getattr(self.config, 'otel_batch_timeout', 5.0),
+                max_queue_size=getattr(self.config, 'otel_max_queue_size', 1000),
+                worker_threads=getattr(self.config, 'otel_worker_threads', 2)
+            )
     
     def _get_or_create_instrument(self, metric: MetricValue):
         """Get or create OpenTelemetry instrument for metric"""
@@ -121,8 +149,19 @@ class OpenTelemetryExporter:
         
         return self.instruments[instrument_key]
     
-    def export_metrics(self, metrics: List[MetricValue]):
-        """Export metrics to OpenTelemetry"""
+    async def export_metrics(self, metrics: List[MetricValue]):
+        """Export metrics to OpenTelemetry using batch exporter"""
+        if not self.is_enabled():
+            return
+        
+        if self._batch_exporter:
+            await self._batch_exporter.export_metrics(metrics)
+        else:
+            # Fallback to synchronous export
+            self._export_metrics_sync(metrics)
+    
+    def _export_metrics_sync(self, metrics: List[MetricValue]):
+        """Synchronous metrics export (used by batch exporter)"""
         if not self.meter or not self.config.otel_enabled:
             return
         
@@ -143,22 +182,32 @@ class OpenTelemetryExporter:
                             instrument.set(metric.value, attributes=metric.labels)
                             
                     except Exception as e:
-                        logger.error(f"Failed to record metric {metric.name}: {e}")
+                        logger.error("Failed to record metric", metric_name=metric.name, error=str(e))
             
-            logger.debug(f"Exported {len(metrics)} metrics to OpenTelemetry")
+            logger.debug("Exported metrics to OpenTelemetry", metrics_count=len(metrics))
             
         except Exception as e:
-            logger.error(f"Failed to export metrics to OpenTelemetry: {e}")
+            logger.error("Failed to export metrics to OpenTelemetry", error=str(e), exc_info=True)
     
     def is_enabled(self) -> bool:
         """Check if OpenTelemetry export is enabled and configured"""
         return self.meter_provider is not None and self.config.otel_enabled
     
-    def shutdown(self):
+    async def start(self):
+        """Start the batch exporter"""
+        if self._batch_exporter:
+            await self._batch_exporter.start()
+    
+    async def shutdown(self):
         """Shutdown OpenTelemetry resources"""
+        # Stop batch exporter first
+        if self._batch_exporter:
+            await self._batch_exporter.stop()
+        
+        # Shutdown meter provider
         if self.meter_provider:
             try:
                 self.meter_provider.shutdown()
-                logger.info("OpenTelemetry exporter shutdown")
+                logger.info("OpenTelemetry exporter shutdown", event_type="otel_shutdown")
             except Exception as e:
-                logger.error(f"Error shutting down OpenTelemetry: {e}")
+                logger.error("Error shutting down OpenTelemetry", error=str(e), event_type="otel_shutdown_error")

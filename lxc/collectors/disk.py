@@ -8,13 +8,8 @@ from metrics.models import MetricValue, MetricType
 class DiskCollector(BaseCollector):
     """Collect disk usage metrics using df command"""
     
-    @property
-    def name(self) -> str:
-        return "disk"
-    
-    @property
-    def help_text(self) -> str:
-        return "LXC container disk usage metrics"
+    def __init__(self, config=None):
+        super().__init__(config, "disk", "LXC container disk usage metrics")
     
     def collect(self) -> List[MetricValue]:
         """Collect disk metrics"""

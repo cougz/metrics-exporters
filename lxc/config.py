@@ -1,70 +1,98 @@
 """Configuration management for LXC Metrics Exporter"""
 import os
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Literal
+from pydantic import BaseSettings, Field, validator
+from pydantic_settings import BaseSettings as PydanticBaseSettings
 
 
-class Config:
-    """Configuration class with environment-based settings"""
+class Config(PydanticBaseSettings):
+    """Configuration class with Pydantic validation and environment-based settings"""
     
-    def __init__(self):
-        # Core settings
-        self.collection_interval = int(os.getenv('COLLECTION_INTERVAL', '30'))
-        self.metrics_port = int(os.getenv('METRICS_PORT', '9100'))
-        self.metrics_host = os.getenv('METRICS_HOST', '0.0.0.0')
-        
-        # Export configuration
-        self.prometheus_enabled = os.getenv('PROMETHEUS_ENABLED', 'true').lower() == 'true'
-        self.prometheus_file = os.getenv('PROMETHEUS_FILE', '/opt/lxc-metrics-exporter/data/metrics.prom')
-        
-        # OpenTelemetry configuration
-        self.otel_enabled = os.getenv('OTEL_ENABLED', 'false').lower() == 'true'
-        self.otel_endpoint = os.getenv('OTEL_ENDPOINT', None)
-        self.otel_headers = self._parse_otel_headers()
-        self.otel_insecure = os.getenv('OTEL_INSECURE', 'true').lower() == 'true'
-        self.otel_service_name = os.getenv('OTEL_SERVICE_NAME', 'lxc-metrics-exporter')
-        self.otel_service_version = os.getenv('OTEL_SERVICE_VERSION', '1.0.0')
-        
-        # Collector settings
-        self.enabled_collectors = self._parse_list(os.getenv('ENABLED_COLLECTORS', 'memory,disk,process'))
-        
-        # Logging
-        self.log_level = os.getenv('LOG_LEVEL', 'INFO')
-        self.log_file = os.getenv('LOG_FILE', '/opt/lxc-metrics-exporter/logs/app.log')
-        
-        # Service settings
-        self.service_name = "lxc-metrics-exporter"
-        self.service_version = "1.0.0"
-        
-        # Validate configuration
-        self._validate()
+    # Core settings
+    collection_interval: int = Field(default=30, ge=1, description="Collection interval in seconds")
+    metrics_port: int = Field(default=9100, ge=1, le=65535, description="Metrics server port")
+    metrics_host: str = Field(default="0.0.0.0", description="Metrics server host")
     
-    def _parse_otel_headers(self) -> Dict[str, str]:
-        """Parse OpenTelemetry headers from environment"""
-        headers_str = os.getenv('OTEL_HEADERS', '')
-        headers = {}
-        if headers_str:
-            for header in headers_str.split(','):
-                if '=' in header:
-                    key, value = header.split('=', 1)
-                    headers[key.strip()] = value.strip()
-        return headers
+    # Export configuration
+    prometheus_enabled: bool = Field(default=True, description="Enable Prometheus export")
+    prometheus_file: Path = Field(default=Path("/opt/lxc-metrics-exporter/data/metrics.prom"), description="Prometheus metrics file path")
     
-    def _parse_list(self, value: str) -> List[str]:
-        """Parse comma-separated list from environment variable"""
-        if not value:
-            return []
-        return [item.strip() for item in value.split(',') if item.strip()]
+    # OpenTelemetry configuration
+    otel_enabled: bool = Field(default=False, description="Enable OpenTelemetry export")
+    otel_endpoint: Optional[str] = Field(default=None, description="OpenTelemetry endpoint URL")
+    otel_headers: Dict[str, str] = Field(default_factory=dict, description="OpenTelemetry headers")
+    otel_insecure: bool = Field(default=True, description="Use insecure connection for OpenTelemetry")
+    otel_service_name: str = Field(default="lxc-metrics-exporter", description="OpenTelemetry service name")
+    otel_service_version: str = Field(default="1.0.0", description="OpenTelemetry service version")
     
-    def _validate(self):
-        """Validate configuration settings"""
-        if self.otel_enabled and not self.otel_endpoint:
+    # Collector settings
+    enabled_collectors: List[str] = Field(default=["memory", "disk", "process"], description="List of enabled collectors")
+    
+    # Logging
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Log level")
+    log_file: Path = Field(default=Path("/opt/lxc-metrics-exporter/logs/app.log"), description="Log file path")
+    
+    # Service settings
+    service_name: str = Field(default="lxc-metrics-exporter", description="Service name")
+    service_version: str = Field(default="1.0.0", description="Service version")
+    
+    # Security settings
+    trusted_hosts: List[str] = Field(default_factory=list, description="List of trusted hosts")
+    rate_limit_requests: int = Field(default=100, ge=1, description="Max requests per window")
+    rate_limit_window: int = Field(default=60, ge=1, description="Rate limit window in seconds")
+    enable_request_logging: bool = Field(default=True, description="Enable HTTP request logging")
+    
+    # Performance settings
+    otel_batch_size: int = Field(default=100, ge=1, description="OpenTelemetry batch size")
+    otel_batch_timeout: float = Field(default=5.0, ge=0.1, description="OpenTelemetry batch timeout in seconds")
+    otel_max_queue_size: int = Field(default=1000, ge=1, description="OpenTelemetry max queue size")
+    otel_worker_threads: int = Field(default=2, ge=1, description="OpenTelemetry worker threads")
+    
+    class Config:
+        env_prefix = ""
+        case_sensitive = False
+        
+    @validator('otel_endpoint')
+    def validate_otel_endpoint(cls, v, values):
+        """Validate OpenTelemetry endpoint when enabled"""
+        if values.get('otel_enabled') and not v:
             raise ValueError("OTEL_ENDPOINT must be set when OTEL_ENABLED is true")
-        
-        if self.collection_interval < 1:
-            raise ValueError("COLLECTION_INTERVAL must be at least 1 second")
-        
-        if not (1 <= self.metrics_port <= 65535):
-            raise ValueError("METRICS_PORT must be between 1 and 65535")
+        return v
+    
+    @validator('prometheus_file', 'log_file')
+    def ensure_parent_directories(cls, v):
+        """Ensure parent directories exist for file paths"""
+        if isinstance(v, Path):
+            v.parent.mkdir(parents=True, exist_ok=True)
+        return v
+    
+    @validator('otel_headers', pre=True)
+    def parse_otel_headers(cls, v):
+        """Parse OpenTelemetry headers from environment variable"""
+        if isinstance(v, str):
+            headers = {}
+            if v:
+                for header in v.split(','):
+                    if '=' in header:
+                        key, value = header.split('=', 1)
+                        headers[key.strip()] = value.strip()
+            return headers
+        return v or {}
+    
+    @validator('enabled_collectors', pre=True)
+    def parse_enabled_collectors(cls, v):
+        """Parse comma-separated list of collectors"""
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(',') if item.strip()]
+        return v or []
+    
+    @validator('trusted_hosts', pre=True)
+    def parse_trusted_hosts(cls, v):
+        """Parse comma-separated list of trusted hosts"""
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(',') if item.strip()]
+        return v or []
     
     def is_collector_enabled(self, collector_name: str) -> bool:
         """Check if a specific collector is enabled"""

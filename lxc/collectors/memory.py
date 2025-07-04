@@ -8,13 +8,8 @@ from metrics.models import MetricValue, MetricType
 class MemoryCollector(BaseCollector):
     """Collect memory usage metrics from /proc/meminfo and cgroups"""
     
-    @property
-    def name(self) -> str:
-        return "memory"
-    
-    @property
-    def help_text(self) -> str:
-        return "LXC container memory usage metrics"
+    def __init__(self, config=None):
+        super().__init__(config, "memory", "LXC container memory usage metrics")
     
     def collect(self) -> List[MetricValue]:
         """Collect memory metrics"""

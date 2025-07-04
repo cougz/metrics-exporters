@@ -1,13 +1,14 @@
 """Metrics registry for managing collectors and orchestrating collection"""
+import asyncio
 import importlib
 import pkgutil
-import logging
 from typing import Dict, List, Type
 from .models import MetricValue
 from collectors.base import BaseCollector
+from logging_config import get_logger
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MetricsRegistry:
@@ -62,43 +63,78 @@ class MetricsRegistry:
         return list(self.collectors.keys())
     
     def collect_all(self) -> List[MetricValue]:
-        """Collect metrics from all enabled collectors"""
+        """Collect metrics from all enabled collectors (synchronous)"""
         all_metrics = []
         
         for name, collector in self.collectors.items():
-            if not collector.enabled:
+            if not collector.is_enabled():
                 continue
-                
-            # Check if collector is enabled in config
-            if self.config and hasattr(self.config, 'is_collector_enabled'):
-                if not self.config.is_collector_enabled(name):
-                    continue
             
             try:
-                logger.debug(f"Collecting metrics from {name}")
+                logger.debug("Collecting metrics", collector=name, event_type="collection_start")
                 metrics = collector.collect()
                 all_metrics.extend(metrics)
-                logger.debug(f"Collected {len(metrics)} metrics from {name}")
+                logger.debug("Collected metrics", collector=name, metrics_count=len(metrics), event_type="collection_complete")
                 
             except Exception as e:
-                logger.error(f"Collector {name} failed: {e}")
+                logger.error("Collector failed", collector=name, error=str(e), event_type="collection_error", exc_info=True)
                 # Continue with other collectors even if one fails
         
         return all_metrics
+    
+    async def collect_all_async(self) -> List[MetricValue]:
+        """Collect metrics from all enabled collectors asynchronously"""
+        tasks = []
+        
+        for name, collector in self.collectors.items():
+            if not collector.is_enabled():
+                continue
+            tasks.append(self._collect_single_async(name, collector))
+        
+        if not tasks:
+            return []
+        
+        # Execute all collections concurrently
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Flatten results and handle exceptions
+        all_metrics = []
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error("Async collection failed", error=str(result), event_type="async_collection_error", exc_info=True)
+            elif isinstance(result, list):
+                all_metrics.extend(result)
+        
+        return all_metrics
+    
+    async def _collect_single_async(self, name: str, collector: BaseCollector) -> List[MetricValue]:
+        """Collect metrics from a single collector asynchronously"""
+        try:
+            logger.debug("Starting async collection", collector=name, event_type="async_collection_start")
+            metrics = await collector.collect_async()
+            logger.debug("Completed async collection", collector=name, metrics_count=len(metrics), event_type="async_collection_complete")
+            return metrics
+        except Exception as e:
+            logger.error("Async collector failed", collector=name, error=str(e), event_type="async_collection_error", exc_info=True)
+            return []
     
     def get_collector_status(self) -> Dict[str, Dict]:
         """Get status information for all collectors"""
         status = {}
         
         for name, collector in self.collectors.items():
-            enabled = collector.enabled
-            if self.config and hasattr(self.config, 'is_collector_enabled'):
-                enabled = enabled and self.config.is_collector_enabled(name)
-            
             status[name] = {
-                "enabled": enabled,
+                "enabled": collector.is_enabled(),
                 "class": collector.__class__.__name__,
                 "help": collector.help_text
             }
         
         return status
+    
+    def cleanup(self):
+        """Cleanup all collectors"""
+        for collector in self.collectors.values():
+            try:
+                collector.cleanup()
+            except Exception as e:
+                logger.error("Failed to cleanup collector", collector=collector.name, error=str(e))

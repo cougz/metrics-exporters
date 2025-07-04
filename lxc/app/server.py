@@ -1,6 +1,5 @@
 """FastAPI server setup and routes"""
 import asyncio
-import logging
 import time
 import os
 from typing import Dict, Any
@@ -10,9 +9,16 @@ from config import Config
 from metrics.registry import MetricsRegistry
 from metrics.exporters.prometheus import PrometheusExporter
 from metrics.exporters.opentelemetry import OpenTelemetryExporter
+from logging_config import get_logger, log_metrics_collection, log_error
+from middleware.security import (
+    SecurityHeadersMiddleware,
+    RateLimitMiddleware,
+    RequestLoggingMiddleware,
+    HealthCheckMiddleware
+)
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class MetricsServer:
@@ -20,7 +26,13 @@ class MetricsServer:
     
     def __init__(self, config: Config):
         self.config = config
-        self.app = FastAPI(title="LXC Metrics Exporter", version="1.0.0")
+        self.app = FastAPI(
+            title="LXC Metrics Exporter",
+            version="1.0.0",
+            docs_url=None,  # Disable docs for security
+            redoc_url=None,  # Disable redoc for security
+            openapi_url=None  # Disable OpenAPI schema for security
+        )
         self.registry = MetricsRegistry(config)
         
         # Initialize exporters
@@ -34,11 +46,38 @@ class MetricsServer:
         self.current_metrics = ""
         self.collection_task = None
         
+        # Setup security middleware
+        self._setup_middleware()
+        
         # Setup routes
         self._setup_routes()
         
         # Setup startup/shutdown events
         self._setup_events()
+    
+    def _setup_middleware(self):
+        """Setup security middleware"""
+        # Add middleware in reverse order (last added is executed first)
+        
+        # Health check middleware (fastest path)
+        self.app.add_middleware(HealthCheckMiddleware)
+        
+        # Request logging middleware
+        if self.config.enable_request_logging:
+            self.app.add_middleware(RequestLoggingMiddleware)
+        
+        # Rate limiting middleware
+        self.app.add_middleware(
+            RateLimitMiddleware,
+            max_requests=self.config.rate_limit_requests,
+            window_seconds=self.config.rate_limit_window
+        )
+        
+        # Security headers middleware
+        self.app.add_middleware(
+            SecurityHeadersMiddleware,
+            trusted_hosts=self.config.trusted_hosts
+        )
     
     def _setup_routes(self):
         """Setup FastAPI routes"""
@@ -125,7 +164,7 @@ class MetricsServer:
                     "collection_count": self.collection_count
                 }
             except Exception as e:
-                logger.error(f"Manual collection failed: {e}")
+                log_error(logger, e, {"component": "manual_collection", "endpoint": "/collect"})
                 raise HTTPException(status_code=500, detail={"error": str(e)})
         
         @self.app.get('/', response_class=HTMLResponse)
@@ -140,9 +179,18 @@ class MetricsServer:
         async def startup_event():
             """Initialize the application"""
             self.app.state.start_time = time.time()
-            logger.info(f"Starting {self.config.service_name} v{self.config.service_version}")
-            logger.info(f"Collection interval: {self.config.collection_interval}s")
-            logger.info(f"Enabled collectors: {', '.join(self.config.enabled_collectors)}")
+            logger.info(
+                "Application startup initiated",
+                service_name=self.config.service_name,
+                service_version=self.config.service_version,
+                collection_interval=self.config.collection_interval,
+                enabled_collectors=self.config.enabled_collectors,
+                event_type="server_startup"
+            )
+            
+            # Start exporters
+            if self.otel_exporter:
+                await self.otel_exporter.start()
             
             # Start collection task
             self.collection_task = asyncio.create_task(self._collection_loop())
@@ -150,7 +198,7 @@ class MetricsServer:
         @self.app.on_event("shutdown")
         async def shutdown_event():
             """Cleanup on shutdown"""
-            logger.info("Shutting down metrics exporter")
+            logger.info("Shutting down metrics exporter", event_type="server_shutdown")
             
             if self.collection_task:
                 self.collection_task.cancel()
@@ -159,8 +207,12 @@ class MetricsServer:
                 except asyncio.CancelledError:
                     pass
             
+            # Cleanup exporters
             if self.otel_exporter:
-                self.otel_exporter.shutdown()
+                await self.otel_exporter.shutdown()
+            
+            # Cleanup collectors
+            self.registry.cleanup()
     
     async def _collection_loop(self):
         """Background metrics collection loop"""
@@ -171,7 +223,7 @@ class MetricsServer:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Collection loop error: {e}")
+                log_error(logger, e, {"component": "collection_loop", "collection_errors": self.collection_errors})
                 self.collection_errors += 1
                 await asyncio.sleep(min(self.config.collection_interval, 30))
     
@@ -181,25 +233,26 @@ class MetricsServer:
             start_time = time.time()
             self.collection_count += 1
             
-            # Collect metrics
-            logger.debug("Starting metrics collection")
-            metrics = self.registry.collect_all()
+            # Collect metrics asynchronously
+            logger.debug("Starting async metrics collection", event_type="collection_start")
+            metrics = await self.registry.collect_all_async()
             
             # Export to Prometheus
             if self.prometheus_exporter:
                 self.prometheus_exporter.write_metrics_file(metrics)
             
-            # Export to OpenTelemetry
+            # Export to OpenTelemetry asynchronously
             if self.otel_exporter and self.otel_exporter.is_enabled():
-                self.otel_exporter.export_metrics(metrics)
+                await self.otel_exporter.export_metrics(metrics)
             
             self.last_collection_time = time.time()
             collection_time = self.last_collection_time - start_time
             
-            logger.debug(f"Collected {len(metrics)} metrics in {collection_time:.3f}s")
+            # Log structured metrics collection
+            log_metrics_collection(logger, len(metrics), collection_time)
             
         except Exception as e:
-            logger.error(f"Metrics collection failed: {e}")
+            log_error(logger, e, {"component": "metrics_collection", "collection_count": self.collection_count})
             self.collection_errors += 1
             raise
     

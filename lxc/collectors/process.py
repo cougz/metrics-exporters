@@ -8,13 +8,8 @@ from metrics.models import MetricValue, MetricType
 class ProcessCollector(BaseCollector):
     """Collect process count metrics using ps command"""
     
-    @property
-    def name(self) -> str:
-        return "process"
-    
-    @property
-    def help_text(self) -> str:
-        return "LXC container process count metrics"
+    def __init__(self, config=None):
+        super().__init__(config, "process", "LXC container process count metrics")
     
     def collect(self) -> List[MetricValue]:
         """Collect process metrics"""
