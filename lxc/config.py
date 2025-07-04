@@ -29,7 +29,22 @@ class Config(BaseSettings):
     otel_service_version: str = Field(default="1.0.0", description="OpenTelemetry service version")
     
     # Collector settings
-    enabled_collectors: List[str] = Field(default=["memory", "disk", "process"], description="List of enabled collectors")
+    enabled_collectors: List[str] = Field(default=["memory", "disk", "process", "cpu", "network"], description="List of enabled collectors")
+    
+    # CPU collector settings
+    cpu_collection_method: Literal["cgroup", "proc", "auto"] = Field(default="auto", description="CPU statistics collection method")
+    cpu_measurement_interval: float = Field(default=15.0, ge=1.0, description="CPU measurement interval in seconds")
+    
+    # Network collector settings
+    network_interfaces: Optional[List[str]] = Field(default=None, description="Specific network interfaces to monitor (regex patterns)")
+    network_exclude_interfaces: Optional[List[str]] = Field(default=None, description="Network interfaces to exclude (regex patterns)")
+    
+    # LXC-specific settings
+    lxc_detect_container_limits: bool = Field(default=True, description="Detect and respect container resource limits")
+    lxc_prefer_cgroup_stats: bool = Field(default=True, description="Prefer cgroup statistics over /proc when available")
+    
+    # Measurement and caching settings
+    max_measurement_history: int = Field(default=10, ge=1, le=100, description="Maximum measurement history for rate calculations")
     
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Log level")
@@ -100,6 +115,22 @@ class Config(BaseSettings):
         if isinstance(v, str):
             return [item.strip() for item in v.split(',') if item.strip()]
         return v or []
+    
+    @validator('network_interfaces', 'network_exclude_interfaces', pre=True)
+    def parse_network_interfaces(cls, v):
+        """Parse comma-separated list of network interfaces"""
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(',') if item.strip()]
+        return v
+    
+    @validator('enabled_collectors')
+    def validate_enabled_collectors(cls, v):
+        """Validate that enabled collectors are known collectors"""
+        valid_collectors = {'memory', 'disk', 'process', 'cpu', 'network'}
+        for collector in v:
+            if collector not in valid_collectors:
+                raise ValueError(f"Unknown collector: {collector}. Valid collectors: {valid_collectors}")
+        return v
     
     def is_collector_enabled(self, collector_name: str) -> bool:
         """Check if a specific collector is enabled"""
