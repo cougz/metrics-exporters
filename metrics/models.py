@@ -1,26 +1,16 @@
-"""Metric data models"""
+"""Simplified metric models - OTLP only"""
 from dataclasses import dataclass
 from typing import Dict, Optional
 from enum import Enum
 
-
-class ExportFormat(Enum):
-    """Export format options - mutually exclusive"""
-    PROMETHEUS = "prometheus"
-    OTLP = "otlp"
-
-
 class MetricType(Enum):
-    """Prometheus metric types"""
+    """OpenTelemetry metric types"""
     COUNTER = "counter"
     GAUGE = "gauge"
-    HISTOGRAM = "histogram"
-    SUMMARY = "summary"
-
 
 @dataclass
 class MetricValue:
-    """Represents a single metric value"""
+    """Single metric value for OTLP export"""
     name: str
     value: float
     labels: Dict[str, str]
@@ -28,20 +18,8 @@ class MetricValue:
     metric_type: MetricType = MetricType.GAUGE
     unit: str = "1"
     timestamp: Optional[float] = None
-    collector_name: Optional[str] = None  # For debugging which collector produced this metric
     
-    def to_prometheus_line(self) -> str:
-        """Convert to Prometheus exposition format"""
-        labels_str = ""
-        if self.labels:
-            label_pairs = [f'{k}="{v}"' for k, v in self.labels.items()]
-            labels_str = "{" + ",".join(label_pairs) + "}"
-        
-        return f"{self.name}{labels_str} {self.value}"
-    
-    def to_prometheus_with_type(self) -> str:
-        """Convert to Prometheus format with TYPE comment"""
-        lines = []
-        lines.append(f"# TYPE {self.name} {self.metric_type.value}")
-        lines.append(self.to_prometheus_line())
-        return "\n".join(lines)
+    def __post_init__(self):
+        # Ensure labels is never None
+        if self.labels is None:
+            self.labels = {}

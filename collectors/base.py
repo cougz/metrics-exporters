@@ -1,12 +1,11 @@
-"""Base collector class and interfaces"""
+"""Simplified base collector"""
 import asyncio
 import socket
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict
+from typing import List, Dict
 from concurrent.futures import ThreadPoolExecutor
 from metrics.models import MetricValue
-from utils.container import extract_container_id
-
+from environment.context import runtime_context
 
 class BaseCollector(ABC):
     """Base class for all metric collectors"""
@@ -16,6 +15,20 @@ class BaseCollector(ABC):
         self._name = name
         self._help_text = help_text
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix=f"{name}_collector")
+        self._strategy = self._get_strategy()
+    
+    def _get_strategy(self):
+        """Get collection strategy based on environment"""
+        runtime_env = runtime_context.get_runtime_environment()
+        if runtime_env.is_container:
+            from .strategies.container import ContainerStrategy
+            return ContainerStrategy()
+        elif runtime_env.is_host:
+            from .strategies.host import HostStrategy
+            return HostStrategy()
+        else:
+            from .strategies.fallback import FallbackStrategy
+            return FallbackStrategy()
     
     @abstractmethod
     def collect(self) -> List[MetricValue]:
@@ -29,45 +42,72 @@ class BaseCollector(ABC):
     
     @property
     def name(self) -> str:
-        """Collector name for identification"""
         return self._name
     
     @property
     def help_text(self) -> str:
-        """Help text describing what this collector does"""
         return self._help_text or f"{self.name} metrics collector"
     
     def is_enabled(self) -> bool:
         """Check if this collector is enabled"""
-        if hasattr(self.config, 'is_collector_enabled'):
-            return self.config.is_collector_enabled(self.name)
+        if hasattr(self.config, 'enabled_collectors'):
+            return self.name in self.config.enabled_collectors
         return True
     
-    def validate_number(self, value: str) -> bool:
-        """Check if a string is a valid number"""
-        if not value:
-            return False
-        try:
-            float(value)
-            return True
-        except ValueError:
-            return False
+    def collect_with_strategy(self, metric_type: str):
+        """Collect metrics using the appropriate strategy for the current environment"""
+        # Map metric types to strategy methods
+        strategy_methods = {
+            "cpu": "collect_cpu",
+            "memory": "collect_memory", 
+            "filesystem": "collect_filesystem",
+            "network": "collect_network",
+            "process": "collect_process",
+            "sensors": "collect_sensors",
+            "smart": "collect_smart",
+            "zfs": "collect_zfs"
+        }
+        
+        method_name = strategy_methods.get(metric_type)
+        if not method_name:
+            from .strategies.base import StrategyResult, StrategyStatus
+            return StrategyResult(
+                status=StrategyStatus.NOT_SUPPORTED,
+                data={},
+                errors=[f"Unknown metric type: {metric_type}"]
+            )
+        
+        # Get the appropriate method from the strategy
+        if hasattr(self._strategy, method_name):
+            method = getattr(self._strategy, method_name)
+            return method()
+        else:
+            from .strategies.base import StrategyResult, StrategyStatus
+            return StrategyResult(
+                status=StrategyStatus.NOT_SUPPORTED,
+                data={},
+                errors=[f"Strategy does not support {metric_type} collection"]
+            )
     
     def get_standard_labels(self, additional_labels: Dict[str, str] = None) -> Dict[str, str]:
-        """Get standard labels including instance information"""
-        hostname = socket.gethostname()
-        container_id = extract_container_id() or "unknown"
-        instance_id = f"{hostname}:{container_id}"
+        """Get standard labels for OpenTelemetry"""
+        runtime_env = runtime_context.get_runtime_environment()
+        labels = {}
         
-        # If config is available and has get_instance_id method, use it
-        if hasattr(self.config, 'get_instance_id'):
-            instance_id = self.config.get_instance_id()
+        # Simplified labeling to avoid Grafana conflicts
+        hostname = runtime_env.metadata.get("hostname", socket.gethostname())
+        labels["host_name"] = hostname
         
-        labels = {
-            "host_name": hostname,
-            "container_id": container_id,
-            "instance": instance_id
-        }
+        if runtime_env.is_container:
+            container_id = runtime_env.metadata.get("container_id")
+            if container_id:
+                # Use short container ID to avoid conflicts
+                short_id = container_id[:12] if len(container_id) > 12 else container_id
+                labels["instance"] = f"{hostname}-{short_id}"
+            else:
+                labels["instance"] = hostname
+        else:
+            labels["instance"] = hostname
         
         if additional_labels:
             labels.update(additional_labels)

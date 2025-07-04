@@ -1,212 +1,210 @@
-"""Metric transformer for converting between Prometheus and OpenTelemetry formats"""
-from typing import List, Dict, Optional, Tuple
+"""Always-on OpenTelemetry transformer"""
+from typing import List, Dict
 from collections import defaultdict
 from .models import MetricValue, MetricType
-from .semantic_conventions import SemanticConventions
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# OpenTelemetry semantic convention mappings
+SEMANTIC_MAPPINGS = {
+    # Memory mappings
+    "node_memory_total_bytes": ("system.memory.usage", {"state": "total"}),
+    "node_memory_free_bytes": ("system.memory.usage", {"state": "free"}),
+    "node_memory_usage_bytes": ("system.memory.usage", {"state": "used"}),
+    "node_memory_available_bytes": ("system.memory.usage", {"state": "available"}),
+    
+    # CPU mappings  
+    "node_cpu_count": ("system.cpu.logical.count", {}),
+    "node_cpu_usage_percent": ("system.cpu.utilization", {}),
+    "node_load1": ("system.cpu.load_average.1m", {}),
+    "node_load5": ("system.cpu.load_average.5m", {}),
+    "node_load15": ("system.cpu.load_average.15m", {}),
+    
+    # Filesystem mappings
+    "node_filesystem_size_bytes": ("system.filesystem.usage", {"state": "total"}),
+    "node_filesystem_usage_bytes": ("system.filesystem.usage", {"state": "used"}),
+    "node_filesystem_avail_bytes": ("system.filesystem.usage", {"state": "available"}),
+    
+    # Network mappings
+    "node_network_receive_bytes_total": ("system.network.io", {"direction": "receive"}),
+    "node_network_transmit_bytes_total": ("system.network.io", {"direction": "transmit"}),
+    "node_network_receive_packets_total": ("system.network.packets", {"direction": "receive"}),
+    "node_network_transmit_packets_total": ("system.network.packets", {"direction": "transmit"}),
+    
+    # Process mappings
+    "node_processes_total": ("system.process.count", {"state": "total"}),
+    "node_procs_running": ("system.process.count", {"state": "running"}),
+    "node_procs_blocked": ("system.process.count", {"state": "blocked"}),
+}
 
 class MetricTransformer:
-    """Transforms metrics between Prometheus and OpenTelemetry formats"""
+    """Always transforms metrics to OpenTelemetry format"""
     
-    def __init__(self, config=None):
+    def __init__(self, config):
         self.config = config
-        self.use_otel_semconv = config.use_otel_semconv if config else True
-        self.resource_attributes = self._get_resource_attributes()
     
-    def _get_resource_attributes(self) -> Dict[str, str]:
-        """Get resource attributes from config"""
-        if not self.config:
-            return {}
-        
-        return self.config.get_otel_resource_attributes()
-    
-    def transform_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Transform metrics according to configuration"""
-        if not self.use_otel_semconv:
-            return metrics
-        
+    def transform_all(self, metrics: List[MetricValue]) -> List[MetricValue]:
+        """Transform all metrics to OpenTelemetry semantic conventions"""
         logger.debug(f"Transforming {len(metrics)} metrics to OpenTelemetry format")
         
-        # First pass: convert names and units, only keep metrics that have mappings
-        transformed_metrics = []
+        # Step 1: Convert naming and add semantic labels
+        transformed = self._convert_to_semantic_names(metrics)
+        
+        # Step 2: Convert percentages to ratios
+        normalized = self._normalize_values(transformed)
+        
+        # Step 3: Consolidate metrics with same names
+        consolidated = self._consolidate_metrics(normalized)
+        
+        # Step 4: Add calculated utilization metrics
+        enhanced = self._add_utilization_metrics(consolidated)
+        
+        logger.debug(f"Transformed to {len(enhanced)} OpenTelemetry metrics")
+        return enhanced
+    
+    def _convert_to_semantic_names(self, metrics: List[MetricValue]) -> List[MetricValue]:
+        """Convert metric names to OpenTelemetry semantic conventions"""
+        transformed = []
+        
         for metric in metrics:
-            transformed_metric = self._transform_single_metric(metric)
-            if transformed_metric:
-                transformed_metrics.append(transformed_metric)
-        
-        # Second pass: consolidate metrics that should be combined with labels
-        consolidated_metrics = self._consolidate_metrics(transformed_metrics)
-        
-        logger.debug(f"Transformed to {len(consolidated_metrics)} OpenTelemetry metrics")
-        return consolidated_metrics
-    
-    def _transform_single_metric(self, metric: MetricValue) -> Optional[MetricValue]:
-        """Transform a single metric to OpenTelemetry format"""
-        # Only transform metrics that have explicit mappings
-        if metric.name not in SemanticConventions.get_all_mappings():
-            logger.debug(f"Skipping unmapped metric: {metric.name}")
-            return None
-        
-        # Get OpenTelemetry name
-        otel_name = SemanticConventions.get_otel_metric_name(metric.name)
-        
-        # Get OpenTelemetry unit
-        otel_unit = SemanticConventions.get_otel_unit(metric.name)
-        
-        # Get OpenTelemetry description
-        otel_description = SemanticConventions.get_otel_description(metric.name)
-        if not otel_description:
-            otel_description = metric.help_text
-        
-        # Transform labels
-        new_labels = self._transform_labels(metric.labels.copy(), metric.name)
-        
-        # Convert percentage values to ratios
-        new_value = SemanticConventions.convert_percentage_to_ratio(metric.value, metric.name)
-        
-        # Create transformed metric
-        return MetricValue(
-            name=otel_name,
-            value=new_value,
-            labels=new_labels,
-            help_text=otel_description,
-            metric_type=metric.metric_type,
-            unit=otel_unit,
-            timestamp=metric.timestamp
-        )
-    
-    def _transform_labels(self, labels: Dict[str, str], metric_name: str) -> Dict[str, str]:
-        """Transform metric labels"""
-        # Add consolidation labels if needed
-        consolidation_labels = SemanticConventions.get_consolidation_labels(metric_name)
-        if consolidation_labels:
-            labels.update(consolidation_labels)
-        
-        # Remove labels that should be resource attributes
-        resource_labels = {}
-        metric_labels = {}
-        
-        for key, value in labels.items():
-            if SemanticConventions.is_resource_attribute(key):
-                resource_labels[key] = value
+            if metric.name in SEMANTIC_MAPPINGS:
+                # Use explicit mapping
+                new_name, additional_labels = SEMANTIC_MAPPINGS[metric.name]
+                new_labels = metric.labels.copy()
+                new_labels.update(additional_labels)
+                
+                transformed_metric = MetricValue(
+                    name=new_name,
+                    value=metric.value,
+                    labels=new_labels,
+                    help_text=metric.help_text,
+                    metric_type=metric.metric_type,
+                    unit=self._get_semantic_unit(metric.name),
+                    timestamp=metric.timestamp
+                )
+                transformed.append(transformed_metric)
+                
+            elif metric.name.startswith("node_"):
+                # Fallback: convert node_ to system.
+                new_name = metric.name.replace("node_", "system.")
+                transformed_metric = MetricValue(
+                    name=new_name,
+                    value=metric.value,
+                    labels=metric.labels.copy(),
+                    help_text=metric.help_text,
+                    metric_type=metric.metric_type,
+                    unit=metric.unit,
+                    timestamp=metric.timestamp
+                )
+                transformed.append(transformed_metric)
             else:
-                metric_labels[key] = value
+                # Keep as-is if already semantic
+                transformed.append(metric)
         
-        # Store resource attributes for later use
-        if resource_labels:
-            logger.debug(f"Moving labels to resource attributes: {resource_labels}")
+        return transformed
+    
+    def _get_semantic_unit(self, original_name: str) -> str:
+        """Get appropriate OpenTelemetry unit"""
+        if "bytes" in original_name:
+            return "By"
+        elif "percent" in original_name:
+            return "1"
+        elif "seconds" in original_name:
+            return "s"
+        elif "hertz" in original_name:
+            return "Hz"
+        else:
+            return "1"
+    
+    def _normalize_values(self, metrics: List[MetricValue]) -> List[MetricValue]:
+        """Convert percentages to ratios for OpenTelemetry"""
+        normalized = []
         
-        return metric_labels
+        for metric in metrics:
+            new_metric = metric
+            
+            # Convert percentages to ratios (0-100 → 0-1)
+            if (metric.name.endswith(".utilization") or 
+                "percent" in metric.name.lower() or
+                metric.unit == "%"):
+                
+                new_value = metric.value / 100.0 if metric.value <= 100 else metric.value
+                new_metric = MetricValue(
+                    name=metric.name,
+                    value=new_value,
+                    labels=metric.labels,
+                    help_text=metric.help_text,
+                    metric_type=metric.metric_type,
+                    unit="1",  # Ratios are unitless
+                    timestamp=metric.timestamp
+                )
+            
+            normalized.append(new_metric)
+        
+        return normalized
     
     def _consolidate_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Consolidate metrics that should be combined with state/direction labels"""
-        # Group metrics by name
-        grouped_metrics = defaultdict(list)
-        standalone_metrics = []
-        
-        for metric in metrics:
-            # Check if this metric should be consolidated
-            if self._should_consolidate_metric(metric):
-                grouped_metrics[metric.name].append(metric)
-            else:
-                standalone_metrics.append(metric)
-        
-        # Process grouped metrics
-        consolidated_metrics = []
-        for metric_name, metric_group in grouped_metrics.items():
-            if len(metric_group) == 1:
-                # Single metric, no consolidation needed
-                consolidated_metrics.extend(metric_group)
-            else:
-                # Multiple metrics with same name, deduplicate by labels
-                deduplicated_group = self._deduplicate_metrics(metric_group)
-                consolidated_metrics.extend(deduplicated_group)
-        
-        # Add standalone metrics
-        consolidated_metrics.extend(standalone_metrics)
-        
-        return consolidated_metrics
-    
-    def _should_consolidate_metric(self, metric: MetricValue) -> bool:
-        """Check if metric should be part of consolidation"""
-        # Metrics with state, direction, or similar labels are candidates for consolidation
-        consolidation_labels = ['state', 'direction', 'type', 'status']
-        return any(label in metric.labels for label in consolidation_labels)
-    
-    def _deduplicate_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Deduplicate metrics with the same name and labels"""
-        # Create a key for each metric based on name and labels
+        """Remove duplicate metrics with same name+labels"""
         metric_map = {}
         
         for metric in metrics:
-            # Create a key from metric name and sorted labels
+            # Create unique key from name and labels
             label_key = tuple(sorted(metric.labels.items()))
             key = (metric.name, label_key)
             
             if key in metric_map:
-                # If we have a duplicate, keep the one with the most recent timestamp
-                # or prefer the one with non-zero value
-                existing_metric = metric_map[key]
-                if (metric.timestamp and existing_metric.timestamp and 
-                    metric.timestamp > existing_metric.timestamp):
+                # Keep the metric with higher value (prefer non-zero)
+                existing = metric_map[key]
+                if metric.value > existing.value or (existing.value == 0 and metric.value > 0):
                     metric_map[key] = metric
-                elif metric.value != 0 and existing_metric.value == 0:
-                    metric_map[key] = metric
-                elif existing_metric.value == 0 and metric.value != 0:
-                    # Keep the existing non-zero metric
-                    pass
-                else:
-                    # Keep the existing metric to maintain deterministic behavior
-                    logger.debug(f"Removing duplicate metric: {metric.name} with labels {metric.labels}")
             else:
                 metric_map[key] = metric
         
         return list(metric_map.values())
     
-    def add_calculated_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Add calculated utilization metrics where appropriate"""
-        if not self.use_otel_semconv:
-            return metrics
+    def _add_utilization_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
+        """Add calculated utilization metrics"""
+        enhanced = metrics.copy()
         
-        enhanced_metrics = metrics.copy()
-        
-        # Add memory utilization
-        memory_utilization = self._calculate_memory_utilization(metrics)
-        if memory_utilization:
-            enhanced_metrics.append(memory_utilization)
-        
-        # Add filesystem utilization
-        filesystem_utilizations = self._calculate_filesystem_utilization(metrics)
-        enhanced_metrics.extend(filesystem_utilizations)
-        
-        # Add CPU utilization (if not already present)
-        cpu_utilization = self._calculate_cpu_utilization(metrics)
-        if cpu_utilization:
-            enhanced_metrics.append(cpu_utilization)
-        
-        return enhanced_metrics
-    
-    def _calculate_memory_utilization(self, metrics: List[MetricValue]) -> Optional[MetricValue]:
-        """Calculate memory utilization from usage metrics"""
-        used_memory = None
-        total_memory = None
-        
+        # Group metrics by name for calculations
+        grouped = defaultdict(list)
         for metric in metrics:
-            if metric.name == "system.memory.usage":
-                if metric.labels.get("state") == "used":
-                    used_memory = metric.value
-                elif metric.labels.get("state") == "total":
-                    total_memory = metric.value
+            grouped[metric.name].append(metric)
         
-        if used_memory is not None and total_memory is not None and total_memory > 0:
-            utilization = used_memory / total_memory
+        # Calculate memory utilization
+        if "system.memory.usage" in grouped:
+            utilization = self._calculate_memory_utilization(grouped["system.memory.usage"])
+            if utilization:
+                enhanced.append(utilization)
+        
+        # Calculate filesystem utilizations
+        if "system.filesystem.usage" in grouped:
+            fs_utilizations = self._calculate_filesystem_utilizations(grouped["system.filesystem.usage"])
+            enhanced.extend(fs_utilizations)
+        
+        return enhanced
+    
+    def _calculate_memory_utilization(self, memory_metrics: List[MetricValue]) -> MetricValue:
+        """Calculate memory utilization from usage metrics"""
+        used_value = None
+        total_value = None
+        base_labels = {}
+        
+        for metric in memory_metrics:
+            state = metric.labels.get("state")
+            if state == "used":
+                used_value = metric.value
+                base_labels = {k: v for k, v in metric.labels.items() if k != "state"}
+            elif state == "total":
+                total_value = metric.value
+        
+        if used_value is not None and total_value is not None and total_value > 0:
+            utilization = used_value / total_value
             return MetricValue(
                 name="system.memory.utilization",
                 value=utilization,
-                labels={k: v for k, v in metrics[0].labels.items() if k != "state"},
+                labels=base_labels,
                 help_text="Memory utilization as a fraction",
                 metric_type=MetricType.GAUGE,
                 unit="1"
@@ -214,22 +212,19 @@ class MetricTransformer:
         
         return None
     
-    def _calculate_filesystem_utilization(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Calculate filesystem utilization from usage metrics"""
+    def _calculate_filesystem_utilizations(self, fs_metrics: List[MetricValue]) -> List[MetricValue]:
+        """Calculate filesystem utilizations"""
+        # Group by mountpoint/device
+        fs_groups = defaultdict(dict)
+        
+        for metric in fs_metrics:
+            key = (metric.labels.get("mountpoint", ""), metric.labels.get("device", ""))
+            state = metric.labels.get("state")
+            if state in ["used", "total"]:
+                fs_groups[key][state] = metric
+        
         utilizations = []
-        
-        # Group filesystem metrics by mountpoint/device
-        fs_metrics = defaultdict(dict)
-        
-        for metric in metrics:
-            if metric.name == "system.filesystem.usage":
-                key = (metric.labels.get("mountpoint", ""), metric.labels.get("device", ""))
-                state = metric.labels.get("state")
-                if state in ["used", "total"]:
-                    fs_metrics[key][state] = metric
-        
-        # Calculate utilization for each filesystem
-        for (mountpoint, device), states in fs_metrics.items():
+        for (mountpoint, device), states in fs_groups.items():
             if "used" in states and "total" in states:
                 used = states["used"].value
                 total = states["total"].value
@@ -248,59 +243,3 @@ class MetricTransformer:
                     ))
         
         return utilizations
-    
-    def _calculate_cpu_utilization(self, metrics: List[MetricValue]) -> Optional[MetricValue]:
-        """Calculate CPU utilization from CPU time ratio metrics"""
-        cpu_times = {}
-        
-        for metric in metrics:
-            if metric.name == "system.cpu.time.ratio":
-                state = metric.labels.get("state")
-                if state:
-                    cpu_times[state] = metric.value
-        
-        # Calculate utilization as 1 - idle_ratio
-        if "idle" in cpu_times:
-            idle_ratio = cpu_times["idle"]
-            utilization = 1.0 - idle_ratio
-            
-            # Get base labels (excluding state)
-            base_labels = {}
-            for metric in metrics:
-                if metric.name == "system.cpu.time.ratio":
-                    base_labels = {k: v for k, v in metric.labels.items() if k != "state"}
-                    break
-            
-            return MetricValue(
-                name="system.cpu.utilization",
-                value=utilization,
-                labels=base_labels,
-                help_text="CPU utilization as a fraction",
-                metric_type=MetricType.GAUGE,
-                unit="1"
-            )
-        
-        return None
-    
-    def get_resource_attributes(self) -> Dict[str, str]:
-        """Get resource attributes that should be attached to all metrics"""
-        return self.resource_attributes.copy()
-    
-    def remove_redundant_metrics(self, metrics: List[MetricValue]) -> List[MetricValue]:
-        """Remove metrics that are redundant after consolidation"""
-        if not self.use_otel_semconv:
-            return metrics
-        
-        # Remove percentage metrics where we now have ratios
-        redundant_patterns = [
-            "node_zfs_pool_capacity_percent",  # Replaced by utilization calculation
-        ]
-        
-        filtered_metrics = []
-        for metric in metrics:
-            if not any(pattern in metric.name for pattern in redundant_patterns):
-                filtered_metrics.append(metric)
-            else:
-                logger.debug(f"Removing redundant metric: {metric.name}")
-        
-        return filtered_metrics

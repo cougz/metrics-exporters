@@ -2,13 +2,13 @@
 import logging
 import os
 from typing import List
-from .base_enhanced import EnvironmentAwareCollector
+from .base import BaseCollector
 from metrics.models import MetricValue, MetricType
 
 logger = logging.getLogger(__name__)
 
 
-class FilesystemCollector(EnvironmentAwareCollector):
+class FilesystemCollector(BaseCollector):
     """Environment-aware filesystem metrics collector"""
     
     def __init__(self, config=None):

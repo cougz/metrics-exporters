@@ -1,5 +1,5 @@
 [Unit]
-Description=Metrics Exporter
+Description=Metrics Exporter (OTLP Only)
 After=network.target
 
 [Service]
@@ -12,27 +12,16 @@ Restart=on-failure
 RestartSec=5
 Environment=PYTHONPATH=/opt/metrics-exporters
 
-# Export format configuration (choose one):
-# For OTLP export (default):
-Environment=EXPORT_FORMAT=otlp
-Environment=OTEL_ENDPOINT=your-otel-collector:4317
-Environment=OTEL_SERVICE_NAME=metrics-exporter
-Environment=OTEL_SERVICE_VERSION=1.0.0
-Environment=OTEL_INSECURE=true
-Environment=USE_OTEL_SEMCONV=true
+# OTLP Configuration (required)
+Environment=OTLP_ENDPOINT=infra-metrics1.home.seiffert.me:4317
+Environment=SERVICE_NAME=metrics-exporter
+Environment=SERVICE_VERSION=1.0.0
+Environment=OTLP_INSECURE=true
 
-# For Prometheus export (uncomment and configure):
-#Environment=EXPORT_FORMAT=prometheus
-
-# Collector configuration (optional):
-#Environment=ENABLED_COLLECTORS=memory,filesystem,process,cpu,network
-#Environment=CPU_COLLECTION_METHOD=auto
-#Environment=CPU_MEASUREMENT_INTERVAL=15.0
-#Environment=NETWORK_INTERFACES=eth0,ens3
-#Environment=NETWORK_EXCLUDE_INTERFACES=lo,docker0
-#Environment=LXC_DETECT_CONTAINER_LIMITS=true
-#Environment=LXC_PREFER_CGROUP_STATS=true
-#Environment=MAX_MEASUREMENT_HISTORY=10
+# Optional settings
+Environment=COLLECTION_INTERVAL=30
+Environment=ENABLED_COLLECTORS=memory,cpu,filesystem,network,process
+Environment=LOG_LEVEL=INFO
 
 [Install]
 WantedBy=multi-user.target

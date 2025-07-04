@@ -1,120 +1,148 @@
-"""Memory metrics collector"""
-import socket
-from utils.container import extract_container_id
-import os
+"""Enhanced memory metrics collector with environment-aware strategies"""
+import logging
 from typing import List
 from .base import BaseCollector
 from metrics.models import MetricValue, MetricType
 
+logger = logging.getLogger(__name__)
+
 
 class MemoryCollector(BaseCollector):
-    """Collect memory usage metrics from /proc/meminfo and cgroups"""
+    """Environment-aware memory metrics collector"""
     
     def __init__(self, config=None):
-        super().__init__(config, "memory", "LXC container memory usage metrics")
+        super().__init__(config, "memory", "Memory usage metrics with environment-aware collection")
     
     def collect(self) -> List[MetricValue]:
-        """Collect memory metrics"""
-        metrics = []
-        
-        # Check cgroup v2 memory info
-        cgroup_memory_limit = None
-        cgroup_memory_usage = None
-        
+        """Collect memory metrics using environment-appropriate strategy"""
         try:
-            if os.path.exists("/sys/fs/cgroup/memory.max"):
-                with open("/sys/fs/cgroup/memory.max", "r") as f:
-                    cgroup_memory_limit = f.read().strip()
-                
-                with open("/sys/fs/cgroup/memory.current", "r") as f:
-                    cgroup_memory_usage = f.read().strip()
-        except (IOError, OSError):
-            pass
-        
-        # Parse /proc/meminfo
-        proc_meminfo = {}
-        try:
-            with open("/proc/meminfo", "r") as f:
-                for line in f:
-                    if ":" in line:
-                        key, value = line.split(":", 1)
-                        # Extract numeric value (remove kB suffix)
-                        value_kb = value.strip().split()[0]
-                        proc_meminfo[key] = int(value_kb)
-        except (IOError, OSError, ValueError):
+            # Use strategy to collect memory data
+            result = self.collect_with_strategy("memory")
+            
+            if not result.is_success:
+                logger.warning(f"Memory collection failed: {result.errors}")
+                return []
+            
+            metrics = []
+            labels = self.get_standard_labels()
+            
+            # Process strategy result into standard memory metrics
+            data = result.data
+            
+            # Handle different data formats from different strategies
+            if "usage_bytes" in data:
+                # cgroup data format
+                metrics.append(MetricValue(
+                    name="node_memory_usage_bytes",
+                    value=float(data["usage_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Memory currently in use in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            elif "memused_bytes" in data:
+                # proc meminfo calculated usage
+                metrics.append(MetricValue(
+                    name="node_memory_usage_bytes", 
+                    value=float(data["memused_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Memory currently in use in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            
+            # Total memory
+            if "limit_bytes" in data:
+                # cgroup limit
+                metrics.append(MetricValue(
+                    name="node_memory_total_bytes",
+                    value=float(data["limit_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Total memory in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            elif "memtotal_bytes" in data:
+                # proc meminfo total
+                metrics.append(MetricValue(
+                    name="node_memory_total_bytes",
+                    value=float(data["memtotal_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Total memory in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            
+            # Free memory
+            if "memfree_bytes" in data:
+                metrics.append(MetricValue(
+                    name="node_memory_free_bytes",
+                    value=float(data["memfree_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Amount of free memory in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            
+            # Available memory
+            if "memavailable_bytes" in data:
+                metrics.append(MetricValue(
+                    name="node_memory_available_bytes",
+                    value=float(data["memavailable_bytes"]),
+                    labels=labels.copy(),
+                    help_text="Memory available for allocation in bytes",
+                    metric_type=MetricType.GAUGE,
+                    unit="bytes"
+                ))
+            
+            # Additional memory metrics from different strategies
+            memory_fields = [
+                ("cache_bytes", "node_memory_cached_bytes", "Cached memory in bytes"),
+                ("rss_bytes", "node_memory_rss_bytes", "RSS memory in bytes"),
+                ("swap_bytes", "node_memory_swap_bytes", "Swap memory in bytes"),
+                ("mapped_file_bytes", "node_memory_mapped_bytes", "Memory mapped files in bytes"),
+                ("buffers_bytes", "node_memory_buffers_bytes", "Buffer memory in bytes"),
+                ("swaptotal_bytes", "node_memory_swap_total_bytes", "Total swap memory in bytes"),
+                ("swapfree_bytes", "node_memory_swap_free_bytes", "Free swap memory in bytes"),
+                ("swapused_bytes", "node_memory_swap_used_bytes", "Used swap memory in bytes"),
+                ("dirty_bytes", "node_memory_dirty_bytes", "Dirty memory in bytes"),
+                ("writeback_bytes", "node_memory_writeback_bytes", "Writeback memory in bytes"),
+            ]
+            
+            for data_key, metric_name, help_text in memory_fields:
+                if data_key in data:
+                    metrics.append(MetricValue(
+                        name=metric_name,
+                        value=float(data[data_key]),
+                        labels=labels.copy(),
+                        help_text=help_text,
+                        metric_type=MetricType.GAUGE,
+                        unit="bytes"
+                    ))
+            
+            # VM statistics (host environments)
+            vm_fields = [
+                ("vm_pgfault", "node_memory_page_faults_total", "Total page faults"),
+                ("vm_pgmajfault", "node_memory_major_page_faults_total", "Major page faults"),
+                ("vm_pgpgin", "node_memory_pages_in_total", "Pages paged in"),
+                ("vm_pgpgout", "node_memory_pages_out_total", "Pages paged out"),
+                ("vm_pswpin", "node_memory_swap_in_total", "Swap pages in"),
+                ("vm_pswpout", "node_memory_swap_out_total", "Swap pages out"),
+            ]
+            
+            for data_key, metric_name, help_text in vm_fields:
+                if data_key in data:
+                    metrics.append(MetricValue(
+                        name=metric_name,
+                        value=float(data[data_key]),
+                        labels=labels.copy(),
+                        help_text=help_text,
+                        metric_type=MetricType.COUNTER
+                    ))
+            
+            logger.debug(f"Collected {len(metrics)} memory metrics using {result.method_used}")
             return metrics
         
-        # Calculate memory metrics
-        if cgroup_memory_limit == "max" or not cgroup_memory_limit:
-            # Use /proc/meminfo
-            total_kb = proc_meminfo.get("MemTotal", 0)
-            available_kb = proc_meminfo.get("MemAvailable", 0)
-            free_kb = proc_meminfo.get("MemFree", 0)
-            buffers_kb = proc_meminfo.get("Buffers", 0)
-            cached_kb = proc_meminfo.get("Cached", 0)
-            
-            total_mem = total_kb * 1024
-            
-            # If total memory is reasonable container size (< 10GB), use it
-            if total_mem < 10737418240:
-                # Get current usage from cgroup if available
-                if cgroup_memory_usage and self.validate_number(cgroup_memory_usage):
-                    used_mem = int(cgroup_memory_usage)
-                else:
-                    # Calculate used memory
-                    used_mem = (total_kb - free_kb - buffers_kb - cached_kb) * 1024
-                
-                free_mem = total_mem - used_mem
-                available_mem = available_kb * 1024
-            else:
-                # Fallback to known 2GB limit
-                total_mem = 2147483648  # 2GB
-                used_mem = int(cgroup_memory_usage) if cgroup_memory_usage and self.validate_number(cgroup_memory_usage) else 0
-                free_mem = total_mem - used_mem
-                available_mem = free_mem
-        else:
-            # Use cgroup limits
-            total_mem = int(cgroup_memory_limit)
-            used_mem = int(cgroup_memory_usage)
-            free_mem = total_mem - used_mem
-            available_mem = free_mem
-        
-        # Create metrics following Prometheus best practices
-        standard_labels = self.get_standard_labels()
-        
-        metrics.extend([
-            MetricValue(
-                name="node_memory_usage_bytes",
-                value=used_mem,
-                labels=standard_labels,
-                help_text="Memory currently in use in bytes",
-                metric_type=MetricType.GAUGE,
-                unit="bytes"
-            ),
-            MetricValue(
-                name="node_memory_free_bytes",
-                value=free_mem,
-                labels=standard_labels,
-                help_text="Amount of free memory in bytes",
-                metric_type=MetricType.GAUGE,
-                unit="bytes"
-            ),
-            MetricValue(
-                name="node_memory_available_bytes",
-                value=available_mem,
-                labels=standard_labels,
-                help_text="Memory available for allocation in bytes",
-                metric_type=MetricType.GAUGE,
-                unit="bytes"
-            ),
-            MetricValue(
-                name="node_memory_total_bytes",
-                value=total_mem,
-                labels=standard_labels,
-                help_text="Total memory in bytes",
-                metric_type=MetricType.GAUGE,
-                unit="bytes"
-            )
-        ])
-        
-        return metrics
+        except Exception as e:
+            logger.error(f"Memory collection failed: {e}")
+            return []

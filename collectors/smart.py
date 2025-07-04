@@ -1,13 +1,13 @@
 """Enhanced SMART data collector for detailed disk health monitoring"""
 import logging
 from typing import List
-from .base_enhanced import EnvironmentAwareCollector
+from .base import BaseCollector
 from metrics.models import MetricValue, MetricType
 
 logger = logging.getLogger(__name__)
 
 
-class SmartCollector(EnvironmentAwareCollector):
+class SmartCollector(BaseCollector):
     """Environment-aware SMART data collector for comprehensive disk monitoring"""
     
     def __init__(self, config=None):

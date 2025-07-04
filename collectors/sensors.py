@@ -1,13 +1,13 @@
 """Enhanced unified sensors collector using sensors command"""
 import logging
 from typing import List
-from .base_enhanced import EnvironmentAwareCollector
+from .base import BaseCollector
 from metrics.models import MetricValue, MetricType
 
 logger = logging.getLogger(__name__)
 
 
-class SensorsCollector(EnvironmentAwareCollector):
+class SensorsCollector(BaseCollector):
     """Environment-aware unified sensors collector for all temperature sensors"""
     
     def __init__(self, config=None):

@@ -1,104 +1,52 @@
-"""Configuration management for LXC Metrics Exporter"""
+"""Simplified configuration for OTLP-only export"""
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Literal
+from typing import List, Dict
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
-from metrics.models import ExportFormat
-
 
 class Config(BaseSettings):
-    """Configuration class with Pydantic validation and environment-based settings"""
+    """Simplified configuration - OTLP only"""
     
     # Core settings
     collection_interval: int = Field(default=30, ge=1, description="Collection interval in seconds")
-    metrics_port: int = Field(default=9100, ge=1, le=65535, description="Metrics server port")
-    metrics_host: str = Field(default="0.0.0.0", description="Metrics server host")
     
-    # Export configuration - mutually exclusive formats
-    export_format: ExportFormat = Field(default=ExportFormat.OTLP, description="Export format (prometheus or otlp)")
-    
-    # Prometheus configuration (only used when export_format=PROMETHEUS)
-    prometheus_file: Path = Field(default=Path("/opt/metrics-exporters/data/metrics.prom"), description="Prometheus metrics file path")
-    
-    # OpenTelemetry configuration (only used when export_format=OTLP)
-    otel_endpoint: Optional[str] = Field(default=None, description="OpenTelemetry endpoint URL")
-    otel_headers: Dict[str, str] = Field(default_factory=dict, description="OpenTelemetry headers")
-    otel_insecure: bool = Field(default=True, description="Use insecure connection for OpenTelemetry")
-    otel_service_name: str = Field(default="lxc-metrics-exporter", description="OpenTelemetry service name")
-    otel_service_version: str = Field(default="1.0.0", description="OpenTelemetry service version")
-    
-    # Environment detection settings
-    force_environment: Optional[str] = Field(default=None, description="Force specific environment type (lxc_container, proxmox_host, generic_host)")
-    auto_detect_environment: bool = Field(default=True, description="Automatically detect runtime environment")
-    
-    # Collector settings
-    enabled_collectors: List[str] = Field(default=["memory", "filesystem", "process", "cpu", "network"], description="List of enabled collectors")
-    
-    # CPU collector settings
-    cpu_collection_method: Literal["cgroup", "proc", "auto"] = Field(default="auto", description="CPU statistics collection method")
-    cpu_measurement_interval: float = Field(default=15.0, ge=1.0, description="CPU measurement interval in seconds")
-    
-    # Network collector settings
-    network_interfaces: Optional[List[str]] = Field(default=None, description="Specific network interfaces to monitor (regex patterns)")
-    network_exclude_interfaces: Optional[List[str]] = Field(default=None, description="Network interfaces to exclude (regex patterns)")
-    
-    # LXC-specific settings
-    lxc_detect_container_limits: bool = Field(default=True, description="Detect and respect container resource limits")
-    lxc_prefer_cgroup_stats: bool = Field(default=True, description="Prefer cgroup statistics over /proc when available")
-    
-    # Measurement and caching settings
-    max_measurement_history: int = Field(default=10, ge=1, le=100, description="Maximum measurement history for rate calculations")
-    
-    # Logging
-    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Log level")
-    log_file: Path = Field(default=Path("/opt/metrics-exporters/logs/app.log"), description="Log file path")
-    
-    # Service settings
+    # OTLP settings (required)
+    otlp_endpoint: str = Field(..., description="OTLP gRPC endpoint (required)")
     service_name: str = Field(default="metrics-exporter", description="Service name")
     service_version: str = Field(default="1.0.0", description="Service version")
+    otlp_insecure: bool = Field(default=True, description="Use insecure OTLP connection")
+    otlp_headers: Dict[str, str] = Field(default_factory=dict, description="OTLP headers")
+    
+    # Collection settings
+    enabled_collectors: List[str] = Field(
+        default=["memory", "cpu", "filesystem", "network", "process"], 
+        description="Enabled collectors"
+    )
+    
+    # Server settings (for health checks only)
+    metrics_port: int = Field(default=9100, ge=1, le=65535, description="Health check server port")
+    metrics_host: str = Field(default="0.0.0.0", description="Health check server host")
+    
+    # Logging
+    log_level: str = Field(default="INFO", description="Log level")
+    log_file: Path = Field(default=Path("/opt/metrics-exporters/logs/app.log"), description="Log file")
     
     # Instance identification
-    instance_id: Optional[str] = Field(default=None, description="Instance ID (auto-generated if not specified)")
-    service_instance_id: Optional[str] = Field(default=None, description="Service instance ID (auto-generated if not specified)")
-    
-    # Security settings
-    trusted_hosts: List[str] = Field(default_factory=list, description="List of trusted hosts")
-    rate_limit_requests: int = Field(default=100, ge=1, description="Max requests per window")
-    rate_limit_window: int = Field(default=60, ge=1, description="Rate limit window in seconds")
-    enable_request_logging: bool = Field(default=True, description="Enable HTTP request logging")
-    
-    # Performance settings
-    otel_batch_size: int = Field(default=100, ge=1, description="OpenTelemetry batch size")
-    otel_batch_timeout: float = Field(default=5.0, ge=0.1, description="OpenTelemetry batch timeout in seconds")
-    otel_max_queue_size: int = Field(default=1000, ge=1, description="OpenTelemetry max queue size")
-    otel_worker_threads: int = Field(default=2, ge=1, description="OpenTelemetry worker threads")
-    
-    # OpenTelemetry semantic conventions
-    use_otel_semconv: bool = Field(default=False, description="Use OpenTelemetry semantic conventions for metric naming")
+    instance_id: str = Field(default="", description="Override instance ID")
     
     class Config:
         env_prefix = ""
         case_sensitive = False
-        
-    @validator('otel_endpoint')
-    def validate_otel_endpoint(cls, v, values):
-        """Validate OpenTelemetry endpoint when OTLP format is selected"""
-        export_format = values.get('export_format')
-        if export_format == ExportFormat.OTLP and not v:
-            raise ValueError("OTEL_ENDPOINT must be set when export_format is 'otlp'")
+    
+    @validator('otlp_endpoint')
+    def validate_otlp_endpoint(cls, v):
+        if not v:
+            raise ValueError("OTLP_ENDPOINT is required")
         return v
     
-    @validator('prometheus_file', 'log_file')
-    def ensure_parent_directories(cls, v):
-        """Ensure parent directories exist for file paths"""
-        if isinstance(v, Path):
-            v.parent.mkdir(parents=True, exist_ok=True)
-        return v
-    
-    @validator('otel_headers', pre=True)
-    def parse_otel_headers(cls, v):
-        """Parse OpenTelemetry headers from environment variable"""
+    @validator('otlp_headers', pre=True)
+    def parse_otlp_headers(cls, v):
         if isinstance(v, str):
             headers = {}
             if v:
@@ -111,69 +59,37 @@ class Config(BaseSettings):
     
     @validator('enabled_collectors', pre=True)
     def parse_enabled_collectors(cls, v):
-        """Parse comma-separated list of collectors"""
         if isinstance(v, str):
             return [item.strip() for item in v.split(',') if item.strip()]
         return v or []
     
-    @validator('trusted_hosts', pre=True)
-    def parse_trusted_hosts(cls, v):
-        """Parse comma-separated list of trusted hosts"""
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(',') if item.strip()]
-        return v or []
-    
-    @validator('network_interfaces', 'network_exclude_interfaces', pre=True)
-    def parse_network_interfaces(cls, v):
-        """Parse comma-separated list of network interfaces"""
-        if isinstance(v, str):
-            return [item.strip() for item in v.split(',') if item.strip()]
+    @validator('log_file')
+    def ensure_log_directory(cls, v):
+        if isinstance(v, Path):
+            v.parent.mkdir(parents=True, exist_ok=True)
         return v
     
-    @validator('enabled_collectors')
-    def validate_enabled_collectors(cls, v):
-        """Validate that enabled collectors are known collectors"""
-        valid_collectors = {'memory', 'filesystem', 'process', 'cpu', 'network', 'sensors_cpu', 'sensors_nvme', 'sensors', 'smart', 'zfs'}
-        for collector in v:
-            if collector not in valid_collectors:
-                raise ValueError(f"Unknown collector: {collector}. Valid collectors: {valid_collectors}")
-        return v
-    
-    def is_collector_enabled(self, collector_name: str) -> bool:
-        """Check if a specific collector is enabled"""
-        return collector_name in self.enabled_collectors
-    
-    def is_prometheus_format(self) -> bool:
-        """Check if Prometheus export format is selected"""
-        return self.export_format == ExportFormat.PROMETHEUS
-    
-    def is_otlp_format(self) -> bool:
-        """Check if OTLP export format is selected"""
-        return self.export_format == ExportFormat.OTLP
-    
-    def get_instance_id(self) -> str:
-        """Get or generate instance ID"""
-        if self.instance_id:
-            return self.instance_id
-        # Auto-generate based on hostname and container ID
-        import socket
-        from utils.container import extract_container_id
-        hostname = socket.gethostname()
-        container_id = extract_container_id() or "unknown"
-        return f"{hostname}:{container_id}"
-    
-    def get_service_instance_id(self) -> str:
-        """Get or generate service instance ID"""
-        if self.service_instance_id:
-            return self.service_instance_id
-        # Use the same as instance_id for consistency
-        return self.get_instance_id()
-    
-    def get_otel_resource_attributes(self) -> Dict[str, str]:
-        """Get OpenTelemetry resource attributes"""
+    def get_otlp_resource_attributes(self) -> Dict[str, str]:
+        """Get OTLP resource attributes"""
         return {
-            "service.name": self.otel_service_name,
-            "service.version": self.otel_service_version,
-            "service.instance.id": self.get_service_instance_id(),
-            "instance": self.get_instance_id(),
+            "service.name": self.service_name,
+            "service.version": self.service_version,
+            "service.instance.id": self.instance_id or self._generate_instance_id(),
         }
+    
+    def _generate_instance_id(self) -> str:
+        """Generate instance ID"""
+        import socket
+        hostname = socket.gethostname()
+        
+        # Try to get container ID
+        try:
+            from utils.container import extract_container_id
+            container_id = extract_container_id()
+            if container_id:
+                short_id = container_id[:12]
+                return f"{hostname}-{short_id}"
+        except:
+            pass
+        
+        return hostname

@@ -1,1 +1,0 @@
-# LXC Metrics Exporter - Exporters package
