@@ -482,6 +482,14 @@ class RuntimeEnvironment:
                                 if "temperature" in nvme_smart:
                                     temp_value = nvme_smart["temperature"]
                                     temp_found = True
+                                
+                                # Debug: show what we actually found
+                                debug_info[f"drive_{drive}_nvme_data"] = {
+                                    "has_nvme_log": "nvme_smart_health_information_log" in smart_data,
+                                    "nvme_keys": list(nvme_smart.keys()) if nvme_smart else [],
+                                    "temperature_in_log": "temperature" in nvme_smart if nvme_smart else False,
+                                    "temp_value": nvme_smart.get("temperature") if nvme_smart else None
+                                }
                             
                         except json.JSONDecodeError:
                             pass  # Will try text parsing

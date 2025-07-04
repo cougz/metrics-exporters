@@ -16,8 +16,10 @@ class SensorsCPUCollector(EnvironmentAwareCollector):
     def collect(self) -> List[MetricValue]:
         """Collect CPU sensor metrics using environment-appropriate strategy"""
         try:
+            logger.debug("Starting CPU sensor collection in enhanced collector")
             # Use strategy to collect CPU sensor data
             result = self.collect_with_strategy("sensors_cpu")
+            logger.debug(f"CPU sensor strategy result: {result.status.value}, has_data: {result.has_data}, data_keys: {list(result.data.keys())}")
             
             if not result.is_success:
                 logger.warning(f"CPU sensors collection failed: {result.errors}")
