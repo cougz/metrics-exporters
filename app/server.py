@@ -180,6 +180,66 @@ class MetricsServer:
             
             return debug_info
         
+        @self.app.get('/debug/collectors')
+        def debug_collectors():
+            """Debug collector data collection"""
+            debug_info = {
+                "collectors": {},
+                "collection_summary": {
+                    "total_collectors": len(self.registry.collectors),
+                    "enabled_collectors": 0,
+                    "sample_data_collected": 0
+                }
+            }
+            
+            # Test each registered collector
+            for name, collector in self.registry.collectors.items():
+                collector_debug = {
+                    "name": name,
+                    "enabled": collector.is_enabled(),
+                    "class": collector.__class__.__name__,
+                    "strategy": getattr(collector.get_collection_strategy(), 'name', 'unknown'),
+                    "sample_collection": {}
+                }
+                
+                if collector.is_enabled():
+                    debug_info["collection_summary"]["enabled_collectors"] += 1
+                    
+                    # Try to collect sample data
+                    try:
+                        import time
+                        start_time = time.time()
+                        sample_metrics = collector.collect()
+                        collection_time = time.time() - start_time
+                        
+                        collector_debug["sample_collection"] = {
+                            "success": True,
+                            "metrics_count": len(sample_metrics),
+                            "collection_time_seconds": round(collection_time, 3),
+                            "sample_metrics": [
+                                {
+                                    "name": m.name,
+                                    "value": m.value,
+                                    "labels": m.labels,
+                                    "type": m.metric_type.value
+                                } for m in sample_metrics[:5]  # First 5 metrics
+                            ]
+                        }
+                        
+                        if sample_metrics:
+                            debug_info["collection_summary"]["sample_data_collected"] += 1
+                            
+                    except Exception as e:
+                        collector_debug["sample_collection"] = {
+                            "success": False,
+                            "error": str(e),
+                            "error_type": type(e).__name__
+                        }
+                
+                debug_info["collectors"][name] = collector_debug
+            
+            return debug_info
+        
         @self.app.post('/collect')
         async def manual_collect():
             """Manually trigger metrics collection"""
@@ -335,6 +395,7 @@ class MetricsServer:
                 <div class="endpoint"><a href="/status">/status</a> - Status information</div>
                 <div class="endpoint"><a href="/collectors">/collectors</a> - Collector information</div>
                 <div class="endpoint"><a href="/debug/detection">/debug/detection</a> - Hardware detection debug</div>
+                <div class="endpoint"><a href="/debug/collectors">/debug/collectors</a> - Collector data testing</div>
                 
                 {env_section}
                 

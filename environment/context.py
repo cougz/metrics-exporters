@@ -269,6 +269,64 @@ class RuntimeEnvironment:
                 "has_pools": has_pools
             })
             
+            # Step 4: Test actual ZFS data collection
+            if has_pools:
+                zfs_test_results = []
+                try:
+                    # Test zpool list with parseable output
+                    result = subprocess.run(
+                        ["zpool", "list", "-H", "-p"],
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    
+                    pools_data = []
+                    if result.returncode == 0:
+                        for line in result.stdout.strip().split('\n'):
+                            if line.strip():
+                                try:
+                                    parts = line.split('\t')
+                                    if len(parts) >= 10:
+                                        pool_name = parts[0]
+                                        size_bytes = int(parts[1])
+                                        alloc_bytes = int(parts[2])
+                                        free_bytes = int(parts[3])
+                                        capacity_percent = float(parts[7])
+                                        health = parts[9]
+                                        
+                                        pools_data.append({
+                                            "name": pool_name,
+                                            "size_bytes": size_bytes,
+                                            "allocated_bytes": alloc_bytes,
+                                            "free_bytes": free_bytes,
+                                            "capacity_percent": capacity_percent,
+                                            "health": health
+                                        })
+                                except (ValueError, IndexError):
+                                    continue
+                    
+                    zfs_test_results.append({
+                        "command": "zpool list -H -p",
+                        "returncode": result.returncode,
+                        "success": result.returncode == 0,
+                        "pools_found": len(pools_data),
+                        "pools_data": pools_data,
+                        "stderr": result.stderr.strip()
+                    })
+                    
+                except Exception as e:
+                    zfs_test_results.append({
+                        "command": "zpool list -H -p",
+                        "error": str(e),
+                        "success": False
+                    })
+                
+                debug_info["steps"].append({
+                    "step": "zfs_data_collection_test",
+                    "results": zfs_test_results
+                })
+            
             debug_info["final_result"] = has_pools
             
         except Exception as e:
@@ -387,8 +445,73 @@ class RuntimeEnvironment:
                 "total_drives": len(nvme_drives) + len(sata_drives)
             })
             
+            # Step 3: Test actual temperature collection from first few drives
+            temp_test_results = []
+            test_drives = (nvme_drives + sata_drives)[:3]  # Test first 3 drives max
+            
+            for drive in test_drives:
+                try:
+                    result = subprocess.run(
+                        ["smartctl", "-A", "-j", str(drive)],
+                        capture_output=True,
+                        text=True,
+                        timeout=15
+                    )
+                    
+                    temp_found = False
+                    temp_value = None
+                    
+                    if result.returncode in [0, 4]:  # 0 = success, 4 = some SMART errors but data available
+                        try:
+                            import json
+                            smart_data = json.loads(result.stdout)
+                            
+                            # Try to extract temperature
+                            ata_smart_attrs = smart_data.get("ata_smart_attributes", {}).get("table", [])
+                            for attr in ata_smart_attrs:
+                                if attr.get("name") in ["Temperature_Celsius", "Airflow_Temperature_Cel"]:
+                                    temp_value = attr.get("raw", {}).get("value", 0)
+                                    temp_found = True
+                                    break
+                            
+                            # For NVMe disks, check different location
+                            if not temp_found:
+                                nvme_smart = smart_data.get("nvme_smart_health_information_log", {})
+                                if "temperature" in nvme_smart:
+                                    temp_value = nvme_smart["temperature"]
+                                    temp_found = True
+                            
+                        except json.JSONDecodeError:
+                            pass  # Will try text parsing
+                    
+                    temp_test_results.append({
+                        "drive": str(drive),
+                        "command": f"smartctl -A -j {drive}",
+                        "returncode": result.returncode,
+                        "success": result.returncode in [0, 4],
+                        "temperature_found": temp_found,
+                        "temperature_celsius": temp_value,
+                        "stdout_length": len(result.stdout),
+                        "stderr": result.stderr.strip()[:200]  # Limit stderr
+                    })
+                    
+                except Exception as e:
+                    temp_test_results.append({
+                        "drive": str(drive),
+                        "command": f"smartctl -A -j {drive}",
+                        "error": str(e),
+                        "success": False
+                    })
+            
+            debug_info["steps"].append({
+                "step": "temperature_collection_test",
+                "tested_drives": len(temp_test_results),
+                "results": temp_test_results
+            })
+            
             has_drives = bool(nvme_drives or sata_drives)
-            debug_info["final_result"] = has_drives
+            has_temp_data = any(r.get("temperature_found", False) for r in temp_test_results)
+            debug_info["final_result"] = has_drives and (has_temp_data or len(temp_test_results) == 0)
             
         except Exception as e:
             debug_info["steps"].append({
