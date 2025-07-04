@@ -55,9 +55,12 @@ class HostStrategy(CollectionStrategy):
     
     def collect_sensors_cpu(self) -> StrategyResult:
         """Collect CPU sensor metrics with full access"""
+        logger.debug("Strategy: collect_sensors_cpu called")
         # Check if CPU sensors are actually available first
         if not self._has_cpu_sensors():
+            logger.debug("Strategy: _has_cpu_sensors returned False")
             return self._create_not_supported_result("CPU sensors not available on this system")
+        logger.debug("Strategy: _has_cpu_sensors returned True, calling _collect_sensors_cpu_full")
         return self._collect_sensors_cpu_full()
     
     def collect_sensors_nvme(self) -> StrategyResult:
@@ -1187,6 +1190,8 @@ class HostStrategy(CollectionStrategy):
         try:
             import subprocess
             
+            logger.debug("Strategy: Checking if CPU sensors are available")
+            
             # Check if sensors command exists
             result = subprocess.run(
                 ["which", "sensors"], 
@@ -1195,8 +1200,10 @@ class HostStrategy(CollectionStrategy):
                 timeout=5
             )
             if result.returncode != 0:
+                logger.debug("Strategy: sensors command not found")
                 return False
             
+            logger.debug("Strategy: sensors command found, testing output")
             # Test if sensors actually work and find temperature data
             result = subprocess.run(
                 ["sensors", "-A"], 
@@ -1205,10 +1212,13 @@ class HostStrategy(CollectionStrategy):
                 timeout=10
             )
             if result.returncode != 0:
+                logger.debug(f"Strategy: sensors command failed with returncode {result.returncode}")
                 return False
             
             # Check if output contains temperature readings
-            return "°C" in result.stdout or "temp" in result.stdout.lower()
+            has_temps = "°C" in result.stdout or "temp" in result.stdout.lower()
+            logger.debug(f"Strategy: sensors output check - has temps: {has_temps}, output length: {len(result.stdout)}")
+            return has_temps
             
         except Exception:
             return False
