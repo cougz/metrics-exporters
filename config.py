@@ -19,7 +19,7 @@ class Config(BaseSettings):
     export_format: ExportFormat = Field(default=ExportFormat.OTLP, description="Export format (prometheus or otlp)")
     
     # Prometheus configuration (only used when export_format=PROMETHEUS)
-    prometheus_file: Path = Field(default=Path("/opt/metrics-exporters/lxc/data/metrics.prom"), description="Prometheus metrics file path")
+    prometheus_file: Path = Field(default=Path("/opt/metrics-exporters/data/metrics.prom"), description="Prometheus metrics file path")
     
     # OpenTelemetry configuration (only used when export_format=OTLP)
     otel_endpoint: Optional[str] = Field(default=None, description="OpenTelemetry endpoint URL")
@@ -52,10 +52,10 @@ class Config(BaseSettings):
     
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Log level")
-    log_file: Path = Field(default=Path("/opt/metrics-exporters/lxc/logs/app.log"), description="Log file path")
+    log_file: Path = Field(default=Path("/opt/metrics-exporters/logs/app.log"), description="Log file path")
     
     # Service settings
-    service_name: str = Field(default="lxc-metrics-exporter", description="Service name")
+    service_name: str = Field(default="metrics-exporter", description="Service name")
     service_version: str = Field(default="1.0.0", description="Service version")
     
     # Instance identification

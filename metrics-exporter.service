@@ -1,27 +1,27 @@
 [Unit]
-Description=LXC Metrics Exporter
+Description=Platform-Agnostic Metrics Exporter
 After=network.target
 
 [Service]
 Type=simple
 User=otelcol
 Group=otelcol
-WorkingDirectory=/opt/metrics-exporters/lxc
-ExecStart=/opt/metrics-exporters/lxc/venv/bin/python /opt/metrics-exporters/lxc/main.py
+WorkingDirectory=/opt/metrics-exporters
+ExecStart=/opt/metrics-exporters/venv/bin/python /opt/metrics-exporters/main.py
 Restart=on-failure
 RestartSec=5
-Environment=PYTHONPATH=/opt/metrics-exporters/lxc
+Environment=PYTHONPATH=/opt/metrics-exporters
 
 # Export format configuration (choose one):
 # For OTLP export (default):
-#Environment=EXPORT_FORMAT=otlp
-#Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
-#Environment=OTEL_SERVICE_NAME=lxc-metrics-exporter
-#Environment=OTEL_SERVICE_VERSION=1.0.0
-#Environment=OTEL_INSECURE=true
+Environment=EXPORT_FORMAT=otlp
+Environment=OTEL_ENDPOINT=infra-metrics1.home.seiffert.me:4317
+Environment=OTEL_SERVICE_NAME=metrics-exporter
+Environment=OTEL_SERVICE_VERSION=1.0.0
+Environment=OTEL_INSECURE=true
 
 # For Prometheus export (uncomment and configure):
-Environment=EXPORT_FORMAT=prometheus
+#Environment=EXPORT_FORMAT=prometheus
 
 # Collector configuration (optional):
 #Environment=ENABLED_COLLECTORS=memory,disk,process,cpu,network
