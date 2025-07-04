@@ -12,10 +12,11 @@ A Python-based metrics exporter for LXC containers that provides comprehensive m
 
 🔧 **Features**:
 - Prometheus-compliant metric naming
-- OpenTelemetry SDK integration
-- Dual export (Prometheus file + OTLP)
+- Configurable export formats (Prometheus OR OpenTelemetry OTLP)
+- Clean architecture without SDK transformations
 - Modular collector architecture
 - RESTful API endpoints
+- Automatic instance identification
 
 📊 **Metrics**:
 - Container memory usage, free, available, and total

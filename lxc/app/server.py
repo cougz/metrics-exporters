@@ -7,8 +7,7 @@ from fastapi import FastAPI, Response, HTTPException
 from fastapi.responses import HTMLResponse
 from config import Config
 from metrics.registry import MetricsRegistry
-from metrics.exporters.prometheus import PrometheusExporter
-from metrics.exporters.transparent_otlp import TransparentOTLPExporter
+from metrics.exporters.base import ExporterFactory
 from logging_config import get_logger, log_metrics_collection, log_error
 from middleware.security import (
     SecurityHeadersMiddleware,
@@ -35,9 +34,8 @@ class MetricsServer:
         )
         self.registry = MetricsRegistry(config)
         
-        # Initialize exporters
-        self.prometheus_exporter = PrometheusExporter(config) if config.prometheus_enabled else None
-        self.otel_exporter = TransparentOTLPExporter(config) if config.otel_enabled else None
+        # Initialize single exporter based on format
+        self.exporter = ExporterFactory.create_exporter(config)
         
         # Collection state
         self.last_collection_time = 0
@@ -84,12 +82,15 @@ class MetricsServer:
         
         @self.app.get('/metrics', response_class=Response)
         def get_metrics():
-            """Serve metrics in Prometheus format"""
-            if self.prometheus_exporter:
-                content = self.prometheus_exporter.read_metrics_file()
-                return Response(content, media_type='text/plain')
+            """Serve metrics in Prometheus format (only available for Prometheus export)"""
+            if self.config.is_prometheus_format():
+                try:
+                    content = self.config.prometheus_file.read_text(encoding='utf-8')
+                    return Response(content, media_type='text/plain')
+                except FileNotFoundError:
+                    return Response("# Metrics file not found\n", media_type='text/plain')
             else:
-                return Response("# Prometheus export disabled\n", media_type='text/plain')
+                return Response("# Metrics endpoint only available for Prometheus export format\n", media_type='text/plain')
         
         @self.app.get('/health')
         def health_check():
@@ -103,8 +104,8 @@ class MetricsServer:
                 "collection_interval": self.config.collection_interval,
                 "total_collections": self.collection_count,
                 "collection_errors": self.collection_errors,
-                "prometheus_enabled": self.config.prometheus_enabled,
-                "opentelemetry_enabled": self.config.otel_enabled and self.otel_exporter.is_enabled() if self.otel_exporter else False
+                "export_format": self.config.export_format.value,
+                "exporter_healthy": self.exporter.is_healthy()
             }
             
             if not is_healthy:
@@ -132,16 +133,11 @@ class MetricsServer:
                     "success_rate": round((self.collection_count - self.collection_errors) / max(self.collection_count, 1) * 100, 1)
                 },
                 "collectors": self.registry.get_collector_status(),
-                "exporters": {
-                    "prometheus": {
-                        "enabled": self.config.prometheus_enabled,
-                        "file": self.config.prometheus_file if self.config.prometheus_enabled else None
-                    },
-                    "opentelemetry": {
-                        "enabled": self.config.otel_enabled,
-                        "endpoint": self.config.otel_endpoint if self.config.otel_enabled else None,
-                        "configured": self.otel_exporter.is_enabled() if self.otel_exporter else False
-                    }
+                "exporter": {
+                    "format": self.config.export_format.value,
+                    "healthy": self.exporter.is_healthy(),
+                    "prometheus_file": str(self.config.prometheus_file) if self.config.is_prometheus_format() else None,
+                    "otlp_endpoint": self.config.otel_endpoint if self.config.is_otlp_format() else None
                 }
             }
         
@@ -188,9 +184,8 @@ class MetricsServer:
                 event_type="server_startup"
             )
             
-            # Start exporters
-            if self.otel_exporter:
-                await self.otel_exporter.start()
+            # Start exporter
+            await self.exporter.start()
             
             # Start collection task
             self.collection_task = asyncio.create_task(self._collection_loop())
@@ -207,9 +202,8 @@ class MetricsServer:
                 except asyncio.CancelledError:
                     pass
             
-            # Cleanup exporters
-            if self.otel_exporter:
-                await self.otel_exporter.shutdown()
+            # Cleanup exporter
+            await self.exporter.shutdown()
             
             # Cleanup collectors
             self.registry.cleanup()
@@ -237,13 +231,8 @@ class MetricsServer:
             logger.debug("Starting async metrics collection", event_type="collection_start")
             metrics = await self.registry.collect_all_async()
             
-            # Export to Prometheus
-            if self.prometheus_exporter:
-                self.prometheus_exporter.write_metrics_file(metrics)
-            
-            # Export to OpenTelemetry asynchronously
-            if self.otel_exporter and self.otel_exporter.is_enabled():
-                await self.otel_exporter.export_metrics(metrics)
+            # Export metrics using configured exporter
+            await self.exporter.export_metrics(metrics)
             
             self.last_collection_time = time.time()
             collection_time = self.last_collection_time - start_time
@@ -293,8 +282,8 @@ class MetricsServer:
                 <div class="section">
                     <ul>
                         <li><strong>Collection Interval:</strong> {self.config.collection_interval} seconds</li>
-                        <li><strong>Prometheus Export:</strong> <span class="{'status-enabled' if self.config.prometheus_enabled else 'status-disabled'}">{'Enabled' if self.config.prometheus_enabled else 'Disabled'}</span></li>
-                        <li><strong>OpenTelemetry Export:</strong> <span class="{'status-enabled' if self.config.otel_enabled else 'status-disabled'}">{'Enabled' if self.config.otel_enabled else 'Disabled'}</span></li>
+                        <li><strong>Export Format:</strong> <span class="status-enabled">{self.config.export_format.value.upper()}</span></li>
+                        <li><strong>Exporter Status:</strong> <span class="{'status-enabled' if self.exporter.is_healthy() else 'status-disabled'}">{'Healthy' if self.exporter.is_healthy() else 'Unhealthy'}</span></li>
                         <li><strong>Hostname:</strong> {os.uname().nodename}</li>
                     </ul>
                 </div>

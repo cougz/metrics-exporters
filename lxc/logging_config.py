@@ -99,8 +99,7 @@ def log_server_startup(logger: structlog.stdlib.BoundLogger, config: Config) -> 
         service_version=config.service_version,
         collection_interval=config.collection_interval,
         enabled_collectors=config.enabled_collectors,
-        prometheus_enabled=config.prometheus_enabled,
-        otel_enabled=config.otel_enabled,
+        export_format=config.export_format.value,
         metrics_port=config.metrics_port,
         event_type="server_startup"
     )

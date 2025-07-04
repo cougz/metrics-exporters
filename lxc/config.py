@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Literal
 from pydantic import Field, validator
 from pydantic_settings import BaseSettings
+from metrics.models import ExportFormat
 
 
 class Config(BaseSettings):
@@ -14,12 +15,13 @@ class Config(BaseSettings):
     metrics_port: int = Field(default=9100, ge=1, le=65535, description="Metrics server port")
     metrics_host: str = Field(default="0.0.0.0", description="Metrics server host")
     
-    # Export configuration
-    prometheus_enabled: bool = Field(default=True, description="Enable Prometheus export")
-    prometheus_file: Path = Field(default=Path("/opt/lxc-metrics-exporter/data/metrics.prom"), description="Prometheus metrics file path")
+    # Export configuration - mutually exclusive formats
+    export_format: ExportFormat = Field(default=ExportFormat.PROMETHEUS, description="Export format (prometheus or otlp)")
     
-    # OpenTelemetry configuration
-    otel_enabled: bool = Field(default=False, description="Enable OpenTelemetry export")
+    # Prometheus configuration (only used when export_format=PROMETHEUS)
+    prometheus_file: Path = Field(default=Path("/opt/metrics-exporters/lxc/data/metrics.prom"), description="Prometheus metrics file path")
+    
+    # OpenTelemetry configuration (only used when export_format=OTLP)
     otel_endpoint: Optional[str] = Field(default=None, description="OpenTelemetry endpoint URL")
     otel_headers: Dict[str, str] = Field(default_factory=dict, description="OpenTelemetry headers")
     otel_insecure: bool = Field(default=True, description="Use insecure connection for OpenTelemetry")
@@ -31,7 +33,7 @@ class Config(BaseSettings):
     
     # Logging
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO", description="Log level")
-    log_file: Path = Field(default=Path("/opt/lxc-metrics-exporter/logs/app.log"), description="Log file path")
+    log_file: Path = Field(default=Path("/opt/metrics-exporters/lxc/logs/app.log"), description="Log file path")
     
     # Service settings
     service_name: str = Field(default="lxc-metrics-exporter", description="Service name")
@@ -59,9 +61,10 @@ class Config(BaseSettings):
         
     @validator('otel_endpoint')
     def validate_otel_endpoint(cls, v, values):
-        """Validate OpenTelemetry endpoint when enabled"""
-        if values.get('otel_enabled') and not v:
-            raise ValueError("OTEL_ENDPOINT must be set when OTEL_ENABLED is true")
+        """Validate OpenTelemetry endpoint when OTLP format is selected"""
+        export_format = values.get('export_format')
+        if export_format == ExportFormat.OTLP and not v:
+            raise ValueError("OTEL_ENDPOINT must be set when export_format is 'otlp'")
         return v
     
     @validator('prometheus_file', 'log_file')
@@ -101,6 +104,14 @@ class Config(BaseSettings):
     def is_collector_enabled(self, collector_name: str) -> bool:
         """Check if a specific collector is enabled"""
         return collector_name in self.enabled_collectors
+    
+    def is_prometheus_format(self) -> bool:
+        """Check if Prometheus export format is selected"""
+        return self.export_format == ExportFormat.PROMETHEUS
+    
+    def is_otlp_format(self) -> bool:
+        """Check if OTLP export format is selected"""
+        return self.export_format == ExportFormat.OTLP
     
     def get_instance_id(self) -> str:
         """Get or generate instance ID"""

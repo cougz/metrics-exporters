@@ -4,6 +4,12 @@ from typing import Dict, Optional
 from enum import Enum
 
 
+class ExportFormat(Enum):
+    """Export format options - mutually exclusive"""
+    PROMETHEUS = "prometheus"
+    OTLP = "otlp"
+
+
 class MetricType(Enum):
     """Prometheus metric types"""
     COUNTER = "counter"
