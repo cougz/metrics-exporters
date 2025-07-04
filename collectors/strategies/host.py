@@ -758,6 +758,8 @@ class HostStrategy(CollectionStrategy):
                 logger.debug("sensors command not available")
                 return None
             
+            logger.debug("sensors command found, attempting to collect temperature data")
+            
             # Run sensors command to get temperature data
             result = subprocess.run(
                 ["sensors", "-A", "-j"],
@@ -766,7 +768,10 @@ class HostStrategy(CollectionStrategy):
                 timeout=15
             )
             
+            logger.debug(f"sensors -A -j result: returncode={result.returncode}, stdout_len={len(result.stdout)}, stderr={result.stderr}")
+            
             if result.returncode != 0:
+                logger.debug("JSON sensors failed, trying text output")
                 # Try without JSON output
                 result = subprocess.run(
                     ["sensors", "-A"],
@@ -774,15 +779,22 @@ class HostStrategy(CollectionStrategy):
                     text=True,
                     timeout=15
                 )
+                logger.debug(f"sensors -A result: returncode={result.returncode}, stdout_len={len(result.stdout)}")
                 if result.returncode == 0:
-                    return self._parse_sensors_text_output(result.stdout)
+                    logger.debug("Calling text parser")
+                    parsed_result = self._parse_sensors_text_output(result.stdout)
+                    logger.debug(f"Text parser returned: {len(parsed_result) if parsed_result else 0} sensors")
+                    return parsed_result
                 return None
             
             # Parse JSON output
             try:
                 import json
                 sensors_data = json.loads(result.stdout)
-                return self._parse_sensors_json_output(sensors_data)
+                logger.debug("Calling JSON parser")
+                parsed_result = self._parse_sensors_json_output(sensors_data)
+                logger.debug(f"JSON parser returned: {len(parsed_result) if parsed_result else 0} sensors")
+                return parsed_result
             except json.JSONDecodeError:
                 # Fallback to text parsing
                 return self._parse_sensors_text_output(result.stdout)
@@ -945,9 +957,9 @@ class HostStrategy(CollectionStrategy):
                 if item.is_block_device():
                     disks.append(str(item))
             
-            # NVMe disks (nvme0n1, nvme1n1, etc.)
-            for item in dev_path.glob("nvme[0-9]n[0-9]"):
-                if item.is_block_device():
+            # NVMe disks (nvme0, nvme1, etc.) - use character devices for temperature access
+            for item in dev_path.glob("nvme[0-9]"):
+                if item.is_char_device():
                     disks.append(str(item))
             
             # IDE disks (hda, hdb, etc.) - less common but still possible

@@ -197,8 +197,8 @@ class RuntimeEnvironment:
             
             # Check if there are any NVMe or SATA drives
             dev_path = Path("/dev")
-            # Only match actual NVMe drives (not partitions)
-            nvme_drives = [d for d in dev_path.glob("nvme*n*") if not any(char.isdigit() for char in d.name.split('n')[-1])]
+            # Match NVMe character devices (nvme0, nvme1, etc.) for temperature access
+            nvme_drives = list(dev_path.glob("nvme[0-9]"))
             sata_drives = list(dev_path.glob("sd[a-z]"))
             
             has_drives = bool(nvme_drives or sata_drives)
@@ -436,8 +436,8 @@ class RuntimeEnvironment:
             
             # Step 2: Check for drives
             dev_path = Path("/dev")
-            # Only match actual NVMe drives (not partitions)
-            nvme_drives = [d for d in dev_path.glob("nvme*n*") if not any(char.isdigit() for char in d.name.split('n')[-1])]
+            # Match NVMe character devices (nvme0, nvme1, etc.) for temperature access
+            nvme_drives = list(dev_path.glob("nvme[0-9]"))
             sata_drives = list(dev_path.glob("sd[a-z]"))
             
             debug_info["steps"].append({
