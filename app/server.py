@@ -240,6 +240,62 @@ class MetricsServer:
             
             return debug_info
         
+        @self.app.get('/debug/sensors')
+        def debug_sensors():
+            """Debug sensor collection specifically"""
+            runtime_env = self.registry.get_runtime_environment()
+            
+            if not runtime_env.is_host:
+                return {"error": "Sensors debugging only available on host environments"}
+            
+            debug_info = {
+                "sensor_collection_test": {}
+            }
+            
+            # Test the actual strategy methods directly
+            try:
+                from collectors.strategies.host import HostStrategy
+                strategy = HostStrategy()
+                
+                # Test CPU sensors
+                cpu_temps = strategy._collect_cpu_temperatures()
+                debug_info["sensor_collection_test"]["cpu_temperatures"] = {
+                    "result": cpu_temps,
+                    "count": len(cpu_temps) if cpu_temps else 0,
+                    "first_sensor": cpu_temps[0] if cpu_temps else None
+                }
+                
+                # Test thermal sensors
+                thermal_sensors = strategy._collect_thermal_sensors()
+                debug_info["sensor_collection_test"]["thermal_sensors"] = {
+                    "result": thermal_sensors,
+                    "count": len(thermal_sensors) if thermal_sensors else 0,
+                    "first_sensor": thermal_sensors[0] if thermal_sensors else None
+                }
+                
+                # Test NVMe sensors
+                nvme_sensors = strategy._collect_disk_temperatures()
+                debug_info["sensor_collection_test"]["nvme_sensors"] = {
+                    "result": nvme_sensors,
+                    "count": len(nvme_sensors) if nvme_sensors else 0,
+                    "first_sensor": nvme_sensors[0] if nvme_sensors else None
+                }
+                
+                # Test full strategy result
+                cpu_result = strategy.collect_sensors_cpu()
+                debug_info["sensor_collection_test"]["full_cpu_strategy"] = {
+                    "status": cpu_result.status.value,
+                    "data_keys": list(cpu_result.data.keys()),
+                    "errors": cpu_result.errors,
+                    "has_data": cpu_result.has_data
+                }
+                
+            except Exception as e:
+                debug_info["sensor_collection_test"]["error"] = str(e)
+                debug_info["sensor_collection_test"]["error_type"] = type(e).__name__
+            
+            return debug_info
+        
         @self.app.post('/collect')
         async def manual_collect():
             """Manually trigger metrics collection"""
@@ -396,6 +452,7 @@ class MetricsServer:
                 <div class="endpoint"><a href="/collectors">/collectors</a> - Collector information</div>
                 <div class="endpoint"><a href="/debug/detection">/debug/detection</a> - Hardware detection debug</div>
                 <div class="endpoint"><a href="/debug/collectors">/debug/collectors</a> - Collector data testing</div>
+                <div class="endpoint"><a href="/debug/sensors">/debug/sensors</a> - Sensor collection testing</div>
                 
                 {env_section}
                 

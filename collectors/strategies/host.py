@@ -701,13 +701,20 @@ class HostStrategy(CollectionStrategy):
             
             # Collect CPU and system temperatures using sensors command
             cpu_temps = self._collect_cpu_temperatures()
+            logger.debug(f"CPU temperatures collected: {len(cpu_temps) if cpu_temps else 0} sensors")
             if cpu_temps:
                 data["cpu_temperatures"] = cpu_temps
+                logger.debug(f"First temperature sensor: {cpu_temps[0] if cpu_temps else 'None'}")
+            else:
+                logger.warning("No CPU temperature sensors found")
             
             # Collect additional thermal sensors (fans, voltage, etc.)
             thermal_sensors = self._collect_thermal_sensors()
+            logger.debug(f"Thermal sensors collected: {len(thermal_sensors) if thermal_sensors else 0} sensors")
             if thermal_sensors:
                 data["thermal_sensors"] = thermal_sensors
+            
+            logger.debug(f"Final sensor data keys: {list(data.keys())}")
             
             if data:
                 return self._create_success_result(data, CollectionMethod.HARDWARE_ACCESS)
@@ -715,6 +722,7 @@ class HostStrategy(CollectionStrategy):
                 return self._create_failure_result(errors or ["No CPU sensor data available"])
         
         except Exception as e:
+            logger.error(f"CPU sensors collection failed: {e}", exc_info=True)
             return self._create_failure_result([f"CPU sensors collection failed: {e}"])
     
     def _collect_sensors_nvme_full(self) -> StrategyResult:
@@ -820,16 +828,20 @@ class HostStrategy(CollectionStrategy):
         temperatures = []
         current_chip = "unknown"
         
+        logger.debug(f"Parsing sensors text output, {len(sensors_output)} characters")
+        
         for line in sensors_output.split('\n'):
             line = line.strip()
             
             # Detect chip name
             if line and not line.startswith(' ') and ':' not in line and '°C' not in line:
                 current_chip = line
+                logger.debug(f"Found chip: {current_chip}")
                 continue
             
             # Parse temperature lines
             if '°C' in line and ':' in line:
+                logger.debug(f"Processing temperature line: {line}")
                 try:
                     parts = line.split(':')
                     if len(parts) >= 2:
@@ -859,10 +871,12 @@ class HostStrategy(CollectionStrategy):
                                 temp_info["temp_max_celsius"] = float(max_match.group(1))
                             
                             temperatures.append(temp_info)
+                            logger.debug(f"Added temperature sensor: {temp_info}")
                 except (ValueError, AttributeError) as e:
                     logger.debug(f"Could not parse temperature line: {line} - {e}")
                     continue
         
+        logger.debug(f"Total temperatures parsed: {len(temperatures)}")
         return temperatures
     
     def _collect_disk_temperatures(self) -> Optional[List[Dict[str, Any]]]:
