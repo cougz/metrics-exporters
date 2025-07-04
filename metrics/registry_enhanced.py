@@ -56,19 +56,30 @@ class EnvironmentAwareMetricsRegistry:
             self._runtime_env = runtime_context.initialize()
     
     def _register_collectors(self):
-        """Register collectors based on runtime environment"""
+        """Register collectors based on runtime environment and available hardware"""
         try:
-            # Get default collectors for the environment
-            default_collectors = self._runtime_env.get_default_collectors()
+            # Always start with environment-detected collectors
+            auto_detected_collectors = self._runtime_env.get_default_collectors()
             
-            # Override with config if specified
+            # Allow config override, but warn if enabling unavailable collectors
             if (hasattr(self.config, 'enabled_collectors') and 
                 self.config.enabled_collectors):
                 enabled_collectors = self.config.enabled_collectors
+                
+                # Warn about potentially unavailable collectors
+                for collector in enabled_collectors:
+                    if collector not in auto_detected_collectors:
+                        logger.warning(f"Collector '{collector}' enabled in config but not auto-detected for this environment")
+                
+                # Suggest auto-detected collectors if config is more limited
+                missing_auto = set(auto_detected_collectors) - set(enabled_collectors)
+                if missing_auto:
+                    logger.info(f"Auto-detected collectors not in config: {list(missing_auto)}")
             else:
-                enabled_collectors = default_collectors
+                enabled_collectors = auto_detected_collectors
             
-            logger.info(f"Enabled collectors for {self._runtime_env.environment_type.value}: {enabled_collectors}")
+            logger.info(f"Auto-detected collectors: {auto_detected_collectors}")
+            logger.info(f"Enabled collectors: {enabled_collectors}")
             
             # Register core collectors
             self._register_core_collectors(enabled_collectors)

@@ -113,6 +113,12 @@ class EnvironmentAwareCollector(ABC):
                 return strategy.collect_network()
             elif metric_type == "process":
                 return strategy.collect_process()
+            elif metric_type == "zfs":
+                return strategy.collect_zfs()
+            elif metric_type == "sensors_cpu":
+                return strategy.collect_sensors_cpu()
+            elif metric_type == "sensors_nvme":
+                return strategy.collect_sensors_nvme()
             else:
                 return strategy._create_not_supported_result(f"Unknown metric type: {metric_type}")
         

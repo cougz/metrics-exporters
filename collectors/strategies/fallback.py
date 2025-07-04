@@ -226,3 +226,15 @@ class FallbackStrategy(CollectionStrategy):
         
         except Exception as e:
             return self._create_failure_result([f"Fallback process collection failed: {e}"])
+    
+    def collect_zfs(self) -> StrategyResult:
+        """ZFS collection not available in fallback strategy"""
+        return self._create_not_supported_result("ZFS not available in fallback environment")
+    
+    def collect_sensors_cpu(self) -> StrategyResult:
+        """CPU sensors collection not available in fallback strategy"""
+        return self._create_not_supported_result("CPU sensors not available in fallback environment")
+    
+    def collect_sensors_nvme(self) -> StrategyResult:
+        """NVMe sensors collection not available in fallback strategy"""
+        return self._create_not_supported_result("NVMe sensors not available in fallback environment")

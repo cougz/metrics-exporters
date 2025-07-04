@@ -40,6 +40,9 @@ class HostStrategy(CollectionStrategy):
     
     def collect_zfs(self) -> StrategyResult:
         """Collect ZFS pool metrics with full access"""
+        # Check if ZFS is actually available first
+        if not self._has_zfs():
+            return self._create_not_supported_result("ZFS not available on this system")
         return self._collect_zfs_full()
     
     def collect_network(self) -> StrategyResult:
@@ -52,10 +55,16 @@ class HostStrategy(CollectionStrategy):
     
     def collect_sensors_cpu(self) -> StrategyResult:
         """Collect CPU sensor metrics with full access"""
+        # Check if CPU sensors are actually available first
+        if not self._has_cpu_sensors():
+            return self._create_not_supported_result("CPU sensors not available on this system")
         return self._collect_sensors_cpu_full()
     
     def collect_sensors_nvme(self) -> StrategyResult:
         """Collect NVMe/disk sensor metrics with full access"""
+        # Check if NVMe/disk sensors are actually available first
+        if not self._has_nvme_sensors():
+            return self._create_not_supported_result("NVMe/disk sensors not available on this system")
         return self._collect_sensors_nvme_full()
     
     def collect_proxmox_system(self) -> StrategyResult:
@@ -1113,3 +1122,92 @@ class HostStrategy(CollectionStrategy):
         except Exception as e:
             logger.warning(f"Thermal sensors collection failed: {e}")
             return None
+    
+    def _has_zfs(self) -> bool:
+        """Check if ZFS pools are available"""
+        try:
+            import subprocess
+            
+            # Check if zpool command exists
+            result = subprocess.run(
+                ["which", "zpool"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return False
+            
+            # Check if there are actual pools
+            result = subprocess.run(
+                ["zpool", "list"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return False
+            
+            # Parse output to see if there are pools (more than just header)
+            lines = result.stdout.strip().split('\n')
+            return len(lines) > 1 and not any('no pools available' in line.lower() for line in lines)
+            
+        except Exception:
+            return False
+    
+    def _has_cpu_sensors(self) -> bool:
+        """Check if CPU temperature sensors are available"""
+        try:
+            import subprocess
+            
+            # Check if sensors command exists
+            result = subprocess.run(
+                ["which", "sensors"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return False
+            
+            # Test if sensors actually work and find temperature data
+            result = subprocess.run(
+                ["sensors", "-A"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                return False
+            
+            # Check if output contains temperature readings
+            return "°C" in result.stdout or "temp" in result.stdout.lower()
+            
+        except Exception:
+            return False
+    
+    def _has_nvme_sensors(self) -> bool:
+        """Check if NVMe/disk temperature monitoring is available"""
+        try:
+            import subprocess
+            from pathlib import Path
+            
+            # Check if smartctl is available
+            result = subprocess.run(
+                ["which", "smartctl"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return False
+            
+            # Check if there are any NVMe or SATA drives
+            dev_path = Path("/dev")
+            nvme_drives = list(dev_path.glob("nvme*n*"))
+            sata_drives = list(dev_path.glob("sd[a-z]"))
+            
+            return bool(nvme_drives or sata_drives)
+            
+        except Exception:
+            return False

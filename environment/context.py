@@ -73,17 +73,138 @@ class RuntimeEnvironment:
         return labels
     
     def get_default_collectors(self) -> list[str]:
-        """Get default collectors for the environment"""
-        if self.is_container:
-            return ["memory", "cpu", "filesystem", "network", "process"]
-        elif self.is_host:
-            return ["memory", "cpu", "filesystem", "network", "process", "sensors_cpu", "sensors_nvme", "zfs"]
-        else:
-            return ["memory", "process"]  # Minimal set for unknown environments
+        """Get collectors based on environment and available hardware/software"""
+        collectors = ["memory", "cpu", "filesystem", "network", "process"]  # Always available
+        
+        if self.is_host:
+            # Check for ZFS availability
+            if self._has_zfs():
+                collectors.append("zfs")
+                logger.debug("ZFS detected, enabling zfs collector")
+            
+            # Check for CPU temperature sensors
+            if self._has_cpu_sensors():
+                collectors.append("sensors_cpu")
+                logger.debug("CPU sensors detected, enabling sensors_cpu collector")
+            
+            # Check for NVMe/disk temperature capability
+            if self._has_nvme_sensors():
+                collectors.append("sensors_nvme")
+                logger.debug("NVMe/disk sensors detected, enabling sensors_nvme collector")
+        
+        logger.info(f"Auto-detected collectors for {self.environment_type.value}: {collectors}")
+        return collectors
     
     def get_collection_interval(self) -> int:
         """Get recommended collection interval for the environment"""
         return 30  # Standard interval for all environments
+    
+    def _has_zfs(self) -> bool:
+        """Check if ZFS pools are available"""
+        try:
+            import subprocess
+            
+            # Check if zpool command exists
+            result = subprocess.run(
+                ["which", "zpool"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("zpool command not found")
+                return False
+            
+            # Check if there are actual pools
+            result = subprocess.run(
+                ["zpool", "list"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                logger.debug("zpool list failed or no pools")
+                return False
+            
+            # Parse output to see if there are pools (more than just header)
+            lines = result.stdout.strip().split('\n')
+            has_pools = len(lines) > 1 and not any('no pools available' in line.lower() for line in lines)
+            logger.debug(f"ZFS pools detected: {has_pools}")
+            return has_pools
+            
+        except Exception as e:
+            logger.debug(f"ZFS detection failed: {e}")
+            return False
+    
+    def _has_cpu_sensors(self) -> bool:
+        """Check if CPU temperature sensors are available"""
+        try:
+            import subprocess
+            
+            # Check if sensors command exists
+            result = subprocess.run(
+                ["which", "sensors"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("sensors command not found")
+                return False
+            
+            # Test if sensors actually work and find temperature data
+            result = subprocess.run(
+                ["sensors", "-A"], 
+                capture_output=True, 
+                text=True,
+                timeout=10
+            )
+            if result.returncode != 0:
+                logger.debug("sensors command failed")
+                return False
+            
+            # Check if output contains temperature readings
+            has_temps = "°C" in result.stdout or "temp" in result.stdout.lower()
+            logger.debug(f"CPU temperature sensors detected: {has_temps}")
+            return has_temps
+            
+        except Exception as e:
+            logger.debug(f"CPU sensors detection failed: {e}")
+            return False
+    
+    def _has_nvme_sensors(self) -> bool:
+        """Check if NVMe/disk temperature monitoring is available"""
+        try:
+            import subprocess
+            from pathlib import Path
+            
+            # Check if smartctl is available
+            result = subprocess.run(
+                ["which", "smartctl"], 
+                capture_output=True, 
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                logger.debug("smartctl command not found")
+                return False
+            
+            # Check if there are any NVMe or SATA drives
+            dev_path = Path("/dev")
+            nvme_drives = list(dev_path.glob("nvme*n*"))
+            sata_drives = list(dev_path.glob("sd[a-z]"))
+            
+            has_drives = bool(nvme_drives or sata_drives)
+            if has_drives:
+                logger.debug(f"Storage drives detected: NVMe={len(nvme_drives)}, SATA={len(sata_drives)}")
+            else:
+                logger.debug("No compatible storage drives found")
+            
+            return has_drives
+            
+        except Exception as e:
+            logger.debug(f"NVMe/disk sensors detection failed: {e}")
+            return False
 
 
 class EnvironmentContext:
